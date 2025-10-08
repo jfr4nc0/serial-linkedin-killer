@@ -20,9 +20,9 @@ from linkedin_mcp.linkedin.utils.logging_config import get_mcp_logger
 class JobApplicationService(IJobApplicationService):
     """Service responsible for orchestrating complete LinkedIn job application workflow."""
 
-    def __init__(self):
+    def __init__(self, browser_type: str = "chrome"):
         # Create concrete implementations
-        self.browser_manager = BrowserManager()
+        self.browser_manager = BrowserManager(browser_type=browser_type)
         self.job_application_agent = EasyApplyAgent()
 
         # Inject dependencies into the graph
@@ -80,7 +80,9 @@ class JobApplicationService(IJobApplicationService):
             raise ValueError(error_msg)
 
         try:
-            # Step 1: Initialize browser (use injected dependency)
+            # Step 1: Initialize browser
+            logger.info("Starting job application workflow")
+            print("\n🚀 Starting LinkedIn Job Application Workflow")
             logger.info("Initializing browser")
             self.browser_manager.start_browser()
 

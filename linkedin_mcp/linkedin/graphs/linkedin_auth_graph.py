@@ -5,6 +5,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 from linkedin_mcp.linkedin.interfaces.services import IBrowserManager
 from linkedin_mcp.linkedin.model.types import AuthState
+from linkedin_mcp.linkedin.utils.profile_confirmation import profile_confirmation
 
 
 class LinkedInAuthGraph:

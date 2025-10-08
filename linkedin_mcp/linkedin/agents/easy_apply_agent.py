@@ -116,7 +116,7 @@ class EasyApplyAgent(IJobApplicationAgent):
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
-            state["browser_manager"].random_delay(2, 4)
+            state["browser_manager"].random_delay(0.5, 1)
 
             return {
                 **state,
@@ -164,16 +164,9 @@ class EasyApplyAgent(IJobApplicationAgent):
                     "current_step": "easy_apply_not_found",
                 }
 
-            # Click the Easy Apply button with human-like interaction
-            try:
-                state["browser_manager"].human_click(easy_apply_button)
-            except Exception:
-                # Fallback to JavaScript click if regular click fails
-                driver.execute_script("arguments[0].click();", easy_apply_button)
+            # Click the Easy Apply button
+            driver.execute_script("arguments[0].click();", easy_apply_button)
 
-            # Add random mouse movement and scrolling after clicking
-            state["browser_manager"].random_mouse_movement()
-            state["browser_manager"].random_scroll()
             state["browser_manager"].random_delay(3, 5)
 
             return {
@@ -352,7 +345,8 @@ class EasyApplyAgent(IJobApplicationAgent):
                             or field_type in field_id.lower()
                             or field_type in field_name.lower()
                         ):
-                            state["browser_manager"].human_type(field, value)
+                            field.clear()
+                            field.send_keys(value)
                             form_answers[field_type] = value
                             state["browser_manager"].random_delay(0.5, 1)
                             break
@@ -665,12 +659,10 @@ class EasyApplyAgent(IJobApplicationAgent):
                 if next_button and next_button.is_enabled():
                     # Click the next button with human-like interaction
                     try:
-                        state["browser_manager"].human_click(next_button)
+                        next_button.click()
                     except Exception:
                         driver.execute_script("arguments[0].click();", next_button)
 
-                    # Add random behavior after clicking next
-                    state["browser_manager"].random_mouse_movement()
                     state["browser_manager"].random_delay(2, 3)
                     return "next"
             except:

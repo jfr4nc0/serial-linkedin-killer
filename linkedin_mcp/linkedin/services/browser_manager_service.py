@@ -1,16 +1,21 @@
+import os
 import random
 import time
 from typing import Optional
 
 import undetected_chromedriver as uc
+from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.os_manager import ChromeType
+from webdriver_manager.firefox import GeckoDriverManager
 
 from linkedin_mcp.linkedin.interfaces.services import IBrowserManager
 from linkedin_mcp.linkedin.utils.logging_config import get_mcp_logger
@@ -20,67 +25,133 @@ from linkedin_mcp.linkedin.utils.user_agent_rotator import user_agent_rotator
 class BrowserManagerService(IBrowserManager):
     """Manages browser instances for LinkedIn automation."""
 
-    def __init__(self, headless: bool = False, use_undetected: bool = True):
+    def __init__(
+        self,
+        headless: bool = False,
+        use_undetected: bool = True,
+        browser_type: str = "chrome",
+    ):
         self.headless = headless
         self.use_undetected = use_undetected
+        self.browser_type = browser_type.lower()
         self.driver: Optional[webdriver.Chrome] = None
         self.wait: Optional[WebDriverWait] = None
-        self.viewport_sizes = [
-            (1920, 1080),
-            (1366, 768),
-            (1536, 864),
-            (1440, 900),
-            (1280, 720),
-        ]
 
     def _get_chrome_options(self) -> Options:
         """Configure Chrome options for LinkedIn automation."""
         options = Options()
-        logger = get_mcp_logger("browser-manager")
 
-        # Random viewport size
-        if not self.headless:
-            width, height = random.choice(self.viewport_sizes)
-            options.add_argument(f"--window-size={width},{height}")
-            # Random window position
-            x_pos = random.randint(0, 100)
-            y_pos = random.randint(0, 100)
-            options.add_argument(f"--window-position={x_pos},{y_pos}")
-        else:
+        if self.headless:
             options.add_argument("--headless")
+        else:
+            options.add_argument("--start-maximized")
 
         # Basic options for compatibility
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
 
-        # Anti-detection experimental options (removed problematic ones)
-        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        # options.add_experimental_option("useAutomationExtension", False)
-
         # Performance options
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins")
         options.add_argument("--disable-images")
 
-        # Use random user agent for each session
-        random_user_agent = user_agent_rotator.get_random_user_agent()
-        options.add_argument(f"--user-agent={random_user_agent}")
-        logger.info(f"Using user agent: {random_user_agent[:80]}...")
+        # Use temporary profile only
+        options.add_argument("--user-data-dir=/tmp/chrome_automation")
 
         return options
 
-    def start_browser(self) -> webdriver.Chrome:
-        """Start and configure the browser."""
+    def _start_firefox(self) -> webdriver.Firefox:
+        """Start Firefox as fallback when Chrome fails."""
+        firefox_options = FirefoxOptions()
+
+        if self.headless:
+            firefox_options.add_argument("--headless")
+
+        # Auto-install GeckoDriver
+        service = webdriver.firefox.service.Service(GeckoDriverManager().install())
+        driver = webdriver.Firefox(service=service, options=firefox_options)
+
+        return driver
+
+    def _start_chrome(self) -> webdriver.Chrome:
+        """Start Chrome browser."""
         options = self._get_chrome_options()
 
         if self.use_undetected:
-            # Let undetected_chromedriver auto-detect the Chrome version
-            self.driver = uc.Chrome(options=options)
+            return uc.Chrome(options=options)
         else:
-            # Auto-install compatible ChromeDriver version
             service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=options)
+            return webdriver.Chrome(service=service, options=options)
+
+    def _start_chromium(self) -> webdriver.Chrome:
+        """Start Chromium browser."""
+        options = self._get_chrome_options()
+
+        if self.use_undetected:
+            # Note: undetected-chromedriver might not work with Chromium
+            # Fall back to regular webdriver
+            service = Service(
+                ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+            )
+            return webdriver.Chrome(service=service, options=options)
+        else:
+            service = Service(
+                ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+            )
+            return webdriver.Chrome(service=service, options=options)
+
+    def start_browser(self) -> webdriver.Chrome:
+        """Start and configure the browser based on browser_type."""
+
+        if self.browser_type == "firefox":
+            print("🦊 Starting Firefox...")
+            try:
+                self.driver = self._start_firefox()
+                print("✅ Firefox started successfully")
+            except Exception as e:
+                print(f"❌ Firefox failed: {str(e)}")
+                print("🌐 Trying Chrome as fallback...")
+                try:
+                    self.driver = self._start_chrome()
+                    print("✅ Chrome started successfully")
+                except Exception as chrome_error:
+                    print(f"❌ Chrome also failed: {str(chrome_error)}")
+                    raise e
+        elif self.browser_type == "chromium":
+            print("🔷 Starting Chromium...")
+            try:
+                self.driver = self._start_chromium()
+                print("✅ Chromium started successfully")
+            except Exception as e:
+                print(f"❌ Chromium failed: {str(e)}")
+                print("🌐 Trying Chrome as fallback...")
+                try:
+                    self.driver = self._start_chrome()
+                    print("✅ Chrome started successfully")
+                except Exception as chrome_error:
+                    print(f"❌ Chrome also failed: {str(chrome_error)}")
+                    print("🦊 Trying Firefox as final fallback...")
+                    try:
+                        self.driver = self._start_firefox()
+                        print("✅ Firefox started successfully")
+                    except Exception as firefox_error:
+                        print(f"❌ All browsers failed: {str(firefox_error)}")
+                        raise e
+        else:  # Default to chrome
+            print("🌐 Starting Chrome...")
+            try:
+                self.driver = self._start_chrome()
+                print("✅ Chrome started successfully")
+            except Exception as e:
+                print(f"❌ Chrome failed: {str(e)}")
+                print("🦊 Trying Firefox as fallback...")
+                try:
+                    self.driver = self._start_firefox()
+                    print("✅ Firefox started successfully")
+                except Exception as firefox_error:
+                    print(f"❌ Firefox also failed: {str(firefox_error)}")
+                    raise e
 
         # Remove webdriver property
         self.driver.execute_script(
@@ -145,47 +216,3 @@ class BrowserManagerService(IBrowserManager):
         """Add random delay to mimic human behavior."""
         delay = random.uniform(min_seconds, max_seconds)
         time.sleep(delay)
-
-    def human_type(self, element, text: str):
-        """Type text with human-like patterns."""
-        element.clear()
-        for char in text:
-            element.send_keys(char)
-            # Random typing speed
-            time.sleep(random.uniform(0.05, 0.2))
-            # Occasional longer pauses (like thinking)
-            if random.random() < 0.1:
-                time.sleep(random.uniform(0.3, 0.8))
-
-    def random_scroll(self):
-        """Add random scrolling to mimic human browsing."""
-        if self.driver:
-            # Random scroll direction and amount
-            scroll_amount = random.randint(-300, 300)
-            self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
-            time.sleep(random.uniform(0.5, 1.5))
-
-    def human_click(self, element):
-        """Click with human-like mouse movement."""
-        if self.driver:
-            # Move to element with slight randomness
-            actions = ActionChains(self.driver)
-            actions.move_to_element_with_offset(
-                element, random.randint(-5, 5), random.randint(-5, 5)
-            )
-            actions.pause(random.uniform(0.1, 0.3))
-            actions.click()
-            actions.perform()
-            time.sleep(random.uniform(0.2, 0.6))
-
-    def random_mouse_movement(self):
-        """Add random mouse movements to appear more human."""
-        if self.driver:
-            actions = ActionChains(self.driver)
-            # Random movements
-            for _ in range(random.randint(1, 3)):
-                x_offset = random.randint(-100, 100)
-                y_offset = random.randint(-100, 100)
-                actions.move_by_offset(x_offset, y_offset)
-                actions.pause(random.uniform(0.1, 0.5))
-            actions.perform()
