@@ -127,8 +127,7 @@ class JobApplicationCLI:
             f"Importing [bold]{csv_path}[/bold] into [bold]{db_path}[/bold]..."
         )
 
-        db = CompanyDB(db_path)
-        try:
+        with CompanyDB(db_path) as db:
             total = db.import_csv(
                 csv_path,
                 on_progress=lambda n: self.ui.console.print(
@@ -136,8 +135,6 @@ class JobApplicationCLI:
                 ),
             )
             self.ui.console.print(f"\nImport complete: {total:,} rows", style="green")
-        finally:
-            db.close()
 
     def _run_workflow_command(
         self,
@@ -490,9 +487,7 @@ class JobApplicationCLI:
         interactive: bool,
         warm_up: bool,
     ):
-        """Execute the outreach workflow command via API + Kafka."""
-        from src.core.tools.message_template import render_template
-
+        """Execute the two-phase outreach workflow: search/cluster → select groups → send."""
         try:
             self.ui = TerminalUI("rich")
             self.ui.start_timer()
@@ -505,7 +500,7 @@ class JobApplicationCLI:
             self.ui.console.print(
                 Panel(
                     "LinkedIn Employee Outreach Agent",
-                    subtitle="Automated employee messaging system",
+                    subtitle="Two-phase outreach: Search → Cluster → Message",
                     border_style="blue",
                 )
             )
@@ -551,42 +546,6 @@ class JobApplicationCLI:
                 if config.outreach.filters.size:
                     filters["size"] = config.outreach.filters.size
 
-            # Message template
-            if interactive:
-                message_template = self.ui.prompt_message_template()
-                template_variables = self.ui.prompt_template_variables()
-            else:
-                if config.outreach.message_template_path:
-                    from src.core.tools.message_template import load_template
-
-                    message_template = load_template(
-                        config.outreach.message_template_path
-                    )
-                else:
-                    message_template = config.outreach.message_template
-                template_variables = {}
-
-            if not message_template:
-                self.ui.console.print("No message template provided.", style="red")
-                return
-
-            # Preview template
-            sample_vars = {
-                **template_variables,
-                "employee_name": "John Doe",
-                "company_name": "Example Co",
-                "employee_title": "Software Engineer",
-            }
-            preview = render_template(message_template, sample_vars)
-            self.ui.console.print(
-                Panel(preview, title="Message Preview", border_style="cyan")
-            )
-            self.ui.console.print()
-
-            if interactive and not typer.confirm("Send messages with this template?"):
-                self.ui.console.print("Cancelled.", style="yellow")
-                return
-
             # Credentials
             email = config.linkedin.email or os.getenv("LINKEDIN_EMAIL", "")
             password = config.linkedin.password or os.getenv("LINKEDIN_PASSWORD", "")
@@ -597,23 +556,142 @@ class JobApplicationCLI:
                 )
                 return
 
-            # Submit to API
-            payload = {
+            # === PHASE 1: Search & Cluster ===
+            self.ui.console.print(
+                "\n[bold cyan]Phase 1: Searching employees and clustering by role...[/bold cyan]\n"
+            )
+
+            search_payload = {
                 "filters": filters,
-                "message_template": message_template,
-                "template_variables": template_variables,
+                "credentials": {"email": email, "password": password},
+            }
+
+            from rich.live import Live
+            from rich.spinner import Spinner
+            from rich.text import Text
+
+            with Live(
+                Spinner("dots", text="Searching employees and clustering by role..."),
+                console=self.ui.console,
+            ) as live:
+                with httpx.Client(timeout=600) as client:  # Long timeout for search
+                    resp = client.post(
+                        f"{base_url}/api/outreach/search", json=search_payload
+                    )
+                    resp.raise_for_status()
+                    search_result = resp.json()
+                live.update(Text("Search complete!", style="bold green"))
+
+            session_id = search_result["session_id"]
+            role_groups = search_result["role_groups"]
+            total_employees = search_result["total_employees"]
+            companies_processed = search_result["companies_processed"]
+
+            if not session_id or total_employees == 0:
+                self.ui.console.print(
+                    "No employees found matching filters.", style="yellow"
+                )
+                return
+
+            self.ui.console.print(
+                f"\nFound [bold green]{total_employees}[/bold green] employees "
+                f"across [bold green]{companies_processed}[/bold green] companies\n"
+            )
+
+            # Display role groups
+            self.ui.print_role_groups(role_groups)
+
+            # === Select Role Groups ===
+            if interactive:
+                selected_roles = self.ui.prompt_group_selection(role_groups)
+            else:
+                # Non-interactive: select all non-empty groups
+                selected_roles = [role for role, emps in role_groups.items() if emps]
+
+            if not selected_roles:
+                self.ui.console.print("No role groups selected.", style="yellow")
+                return
+
+            self.ui.console.print(
+                f"\nSelected groups: [bold cyan]{', '.join(selected_roles)}[/bold cyan]\n"
+            )
+
+            # === Prompt Templates Per Role Group ===
+            selected_groups_config = {}
+
+            # Load default template if available
+            default_template = None
+            if config.outreach.message_template_path:
+                from src.core.tools.message_template import load_template
+
+                default_template = load_template(config.outreach.message_template_path)
+            elif config.outreach.message_template:
+                default_template = config.outreach.message_template
+
+            for role in selected_roles:
+                employees_in_role = role_groups.get(role, [])
+                count = len(employees_in_role)
+                sample_employee = employees_in_role[0] if employees_in_role else None
+
+                if interactive:
+                    template, variables = self.ui.prompt_template_for_role(
+                        role, count, default_template
+                    )
+
+                    # Preview and confirm
+                    confirmed = self.ui.print_message_preview(
+                        role, template, variables, sample_employee
+                    )
+                    if not confirmed:
+                        # Let user re-enter
+                        template, variables = self.ui.prompt_template_for_role(
+                            role, count, None
+                        )
+                else:
+                    # Non-interactive: use default template for all
+                    if not default_template:
+                        self.ui.console.print(
+                            "No message template configured.", style="red"
+                        )
+                        return
+                    template = default_template
+                    variables = {}
+
+                selected_groups_config[role] = {
+                    "enabled": True,
+                    "message_template": template,
+                    "template_variables": variables,
+                }
+
+            # Final confirmation
+            total_to_send = sum(
+                len(role_groups.get(role, [])) for role in selected_roles
+            )
+            if interactive:
+                if not typer.confirm(
+                    f"\nSend messages to {total_to_send} employees in {len(selected_roles)} groups?"
+                ):
+                    self.ui.console.print("Cancelled.", style="yellow")
+                    return
+
+            # === PHASE 2: Send Messages ===
+            self.ui.console.print(
+                "\n[bold cyan]Phase 2: Sending messages...[/bold cyan]\n"
+            )
+
+            send_payload = {
+                "session_id": session_id,
+                "selected_groups": selected_groups_config,
                 "credentials": {"email": email, "password": password},
                 "warm_up": warm_up,
             }
 
-            self.ui.console.print(f"Submitting to {base_url}/api/outreach/run...")
-
             with httpx.Client(timeout=30) as client:
-                resp = client.post(f"{base_url}/api/outreach/run", json=payload)
+                resp = client.post(f"{base_url}/api/outreach/send", json=send_payload)
                 resp.raise_for_status()
                 task_id = resp.json()["task_id"]
 
-            self.ui.console.print(f"Task submitted: {task_id}\n", style="green")
+            self.ui.console.print(f"Task submitted: {task_id}", style="green")
 
             if warm_up:
                 self.ui.console.print(
@@ -621,24 +699,20 @@ class JobApplicationCLI:
                 )
 
             # Consume results from Kafka
-            from rich.live import Live
-            from rich.spinner import Spinner
-            from rich.text import Text
-
-            from src.core.api.schemas.outreach_schemas import OutreachRunResponse
+            from src.core.api.schemas.outreach_schemas import OutreachSendResponse
             from src.core.kafka.consumer import KafkaResultConsumer
             from src.core.kafka.producer import TOPIC_OUTREACH_RESULTS
 
             consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
 
             with Live(
-                Spinner("dots", text="Running outreach workflow..."),
+                Spinner("dots", text="Sending messages..."),
                 console=self.ui.console,
             ) as live:
                 result = consumer.consume(
-                    TOPIC_OUTREACH_RESULTS, task_id, OutreachRunResponse, timeout=600.0
+                    TOPIC_OUTREACH_RESULTS, task_id, OutreachSendResponse, timeout=600.0
                 )
-                live.update(Text("Outreach workflow completed!", style="bold green"))
+                live.update(Text("Message sending complete!", style="bold green"))
 
             if result is None:
                 self.ui.console.print("Timed out waiting for results.", style="red")
@@ -646,9 +720,11 @@ class JobApplicationCLI:
 
             final_state = result.model_dump()
 
-            # Display results
-            if final_state.get("message_results"):
-                self.ui.print_outreach_results(final_state["message_results"])
+            # Display results by role
+            self.ui.print_outreach_results_by_role(
+                final_state.get("message_results", []),
+                final_state.get("results_by_role", {}),
+            )
 
             if final_state.get("errors"):
                 self.ui.print_errors(final_state["errors"])

@@ -1,11 +1,14 @@
 """Controller for employee outreach endpoints."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.core.api.schemas.common import TaskResponse
 from src.core.api.schemas.outreach_schemas import (
     OutreachFiltersResponse,
     OutreachRunRequest,
+    OutreachSearchRequest,
+    OutreachSearchResponse,
+    OutreachSendRequest,
 )
 from src.core.api.services.outreach_service import OutreachService
 
@@ -31,6 +34,28 @@ def run_outreach(
     request: OutreachRunRequest,
     service: OutreachService = Depends(get_outreach_service),
 ) -> TaskResponse:
-    """Submit an outreach workflow. Returns a task_id for tracking via Kafka."""
+    """Legacy: Submit a single-phase outreach workflow. Returns a task_id for tracking via Kafka."""
     task_id = service.submit(request)
     return TaskResponse(task_id=task_id)
+
+
+@router.post("/search", response_model=OutreachSearchResponse)
+def search_employees(
+    request: OutreachSearchRequest,
+    service: OutreachService = Depends(get_outreach_service),
+) -> OutreachSearchResponse:
+    """Phase 1: Search employees and cluster by role. Synchronous, returns clustered groups."""
+    return service.search_and_cluster(request)
+
+
+@router.post("/send", response_model=TaskResponse)
+def send_messages(
+    request: OutreachSendRequest,
+    service: OutreachService = Depends(get_outreach_service),
+) -> TaskResponse:
+    """Phase 2: Send messages to selected role groups. Returns task_id, results via Kafka."""
+    try:
+        task_id = service.submit_send(request)
+        return TaskResponse(task_id=task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

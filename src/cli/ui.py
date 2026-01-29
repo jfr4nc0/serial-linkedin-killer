@@ -610,3 +610,198 @@ class TerminalUI:
             prompt = f"{message}: "
 
         return self.console.input(prompt) or default
+
+    # === Role Group Methods ===
+
+    def print_role_groups(self, role_groups: Dict[str, List[Dict[str, Any]]]) -> None:
+        """Display clustered role groups with employee counts and samples."""
+        self.console.print("\n[bold blue]Employees Clustered by Role[/bold blue]\n")
+
+        total = sum(len(emps) for emps in role_groups.values())
+
+        for role, employees in role_groups.items():
+            if not employees:
+                continue
+
+            count = len(employees)
+            percentage = (count / total * 100) if total > 0 else 0
+
+            table = Table(
+                title=f"{role} ({count} employees, {percentage:.1f}%)",
+                show_header=True,
+                header_style="bold magenta",
+                title_style="bold cyan",
+            )
+            table.add_column("Name", style="green")
+            table.add_column("Title", style="yellow")
+            table.add_column("Company", style="blue")
+
+            # Show first 5 employees as sample
+            for emp in employees[:5]:
+                table.add_row(
+                    emp.get("name", ""),
+                    emp.get("title", ""),
+                    emp.get("company_name", ""),
+                )
+
+            if count > 5:
+                table.add_row("...", f"and {count - 5} more", "...")
+
+            self.console.print(table)
+            self.console.print()
+
+        self.console.print(f"[bold]Total employees: {total}[/bold]\n")
+
+    def prompt_group_selection(
+        self, role_groups: Dict[str, List[Dict[str, Any]]]
+    ) -> List[str]:
+        """Prompt user to select which role groups to message.
+
+        Returns list of selected role names.
+        """
+        non_empty = [(role, len(emps)) for role, emps in role_groups.items() if emps]
+
+        if not non_empty:
+            self.console.print("No role groups with employees", style="yellow")
+            return []
+
+        table = Table(
+            title="Select Role Groups to Message",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("#", style="cyan", width=4)
+        table.add_column("Role", style="green")
+        table.add_column("Count", style="yellow")
+
+        for i, (role, count) in enumerate(non_empty, 1):
+            table.add_row(str(i), role, str(count))
+
+        self.console.print(table)
+        self.console.print()
+
+        selection = self.console.input(
+            "Select groups (comma-separated numbers, or 'all'): "
+        ).strip()
+
+        if not selection or selection.lower() == "all":
+            return [role for role, _ in non_empty]
+
+        selected = []
+        for part in selection.split(","):
+            part = part.strip()
+            if part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(non_empty):
+                    selected.append(non_empty[idx][0])
+
+        return selected
+
+    def prompt_template_for_role(
+        self,
+        role: str,
+        employee_count: int,
+        default_template: Optional[str] = None,
+    ) -> tuple[str, Dict[str, str]]:
+        """Prompt for message template and variables for a specific role.
+
+        Returns (template, variables) tuple.
+        """
+        self.console.print(
+            f"\n[bold cyan]Message Template for {role} ({employee_count} employees)[/bold cyan]"
+        )
+
+        if default_template:
+            self.console.print(f"Default template: {default_template[:100]}...")
+            use_default = self.console.input("Use default? [Y/n]: ").strip().lower()
+            if use_default != "n":
+                variables = self.prompt_template_variables()
+                return default_template, variables
+
+        template = self.prompt_message_template()
+        variables = self.prompt_template_variables()
+        return template, variables
+
+    def print_message_preview(
+        self,
+        role: str,
+        template: str,
+        variables: Dict[str, str],
+        sample_employee: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Preview a rendered message and ask for confirmation.
+
+        Returns True if user confirms, False to re-enter template.
+        """
+        # Render with sample data
+        preview_vars = {**variables}
+        if sample_employee:
+            preview_vars.update(
+                {
+                    "employee_name": sample_employee.get("name", "John Doe"),
+                    "company_name": sample_employee.get("company_name", "Acme Corp"),
+                    "employee_title": sample_employee.get("title", "Software Engineer"),
+                }
+            )
+        else:
+            preview_vars.update(
+                {
+                    "employee_name": "John Doe",
+                    "company_name": "Acme Corp",
+                    "employee_title": "Software Engineer",
+                }
+            )
+
+        # Simple template rendering for preview
+        preview = template
+        for key, value in preview_vars.items():
+            preview = preview.replace(f"{{{key}}}", value)
+
+        panel = Panel(
+            preview,
+            title=f"Message Preview for {role}",
+            border_style="green",
+        )
+        self.console.print(panel)
+
+        confirm = self.console.input("Send this template? [Y/n]: ").strip().lower()
+        return confirm != "n"
+
+    def print_outreach_results_by_role(
+        self,
+        message_results: List[Dict[str, Any]],
+        results_by_role: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """Print outreach results grouped by role."""
+        if not message_results:
+            self.console.print("No messages sent", style="yellow")
+            return
+
+        # Summary by role
+        self.console.print("\n[bold blue]Results by Role[/bold blue]\n")
+
+        summary_table = Table(
+            title="Summary by Role",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        summary_table.add_column("Role", style="cyan")
+        summary_table.add_column("Sent", style="green")
+        summary_table.add_column("Failed", style="red")
+        summary_table.add_column("Total", style="yellow")
+
+        for role, stats in results_by_role.items():
+            sent = stats.get("sent", 0)
+            failed = stats.get("failed", 0)
+            summary_table.add_row(role, str(sent), str(failed), str(sent + failed))
+
+        self.console.print(summary_table)
+        self.console.print()
+
+        # Detailed results (optional)
+        total_sent = sum(1 for r in message_results if r.get("sent"))
+        total = len(message_results)
+
+        self.console.print(
+            f"[bold]Total: {total_sent}/{total} messages sent successfully[/bold]\n"
+        )

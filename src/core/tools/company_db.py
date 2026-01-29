@@ -32,6 +32,13 @@ class CompanyDB:
         self._conn = sqlite3.connect(db_path)
         self._conn.row_factory = sqlite3.Row
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
     def import_csv(
         self,
         csv_path: str,

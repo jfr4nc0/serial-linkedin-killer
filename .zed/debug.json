@@ -1,7 +1,3 @@
-// Project-local debug tasks
-//
-// For more documentation on how to configure debug tasks,
-// see: https://zed.dev/docs/debugger
 [
   {
     "label": "Python Active File",
@@ -10,22 +6,55 @@
     "request": "launch"
   },
   {
-    "label": "Job Applier",
+    "label": "Core Agent API",
     "adapter": "Debugpy",
-    "program": "$ZED_WORKTREE_ROOT/job_applier.py",
+    "module": "uvicorn",
     "request": "launch",
-    "args": ["run"]
+    "args": ["src.core.api.app:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "envFile": "$ZED_WORKTREE_ROOT/.env"
   },
   {
-    "label": "Job Search Tool",
+    "label": "LinkedIn MCP Server",
     "adapter": "Debugpy",
-    "program": "$ZED_WORKTREE_ROOT/tests/test_search_jobs.py",
-    "request": "launch"
+    "module": "src.linkedin_mcp.linkedin.linkedin_server",
+    "request": "launch",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "envFile": "$ZED_WORKTREE_ROOT/.env"
   },
   {
-    "label": "Job Application Tool",
+    "label": "CLI - Outreach Interactive",
     "adapter": "Debugpy",
-    "program": "$ZED_WORKTREE_ROOT/tests/test_job_application.py",
-    "request": "launch"
+    "program": "$ZED_WORKTREE_ROOT/scripts/cli.py",
+    "request": "launch",
+    "args": ["outreach", "--interactive"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "envFile": "$ZED_WORKTREE_ROOT/.env"
+  },
+  {
+    "label": "CLI - Job Apply",
+    "adapter": "Debugpy",
+    "program": "$ZED_WORKTREE_ROOT/scripts/cli.py",
+    "request": "launch",
+    "args": ["run"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "envFile": "$ZED_WORKTREE_ROOT/.env"
+  },
+  {
+    "label": "CLI - Import Dataset",
+    "adapter": "Debugpy",
+    "program": "$ZED_WORKTREE_ROOT/scripts/cli.py",
+    "request": "launch",
+    "args": ["import-dataset"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "envFile": "$ZED_WORKTREE_ROOT/.env"
+  },
+  {
+    "label": "Tests",
+    "adapter": "Debugpy",
+    "module": "pytest",
+    "request": "launch",
+    "args": ["tests/", "-v"],
+    "cwd": "$ZED_WORKTREE_ROOT"
   }
 ]

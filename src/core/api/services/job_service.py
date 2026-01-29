@@ -24,7 +24,7 @@ class JobService:
         thread = threading.Thread(
             target=self._run,
             args=(task_id, request),
-            daemon=True,
+            name=f"job-apply-{task_id[:8]}",
         )
         thread.start()
 
@@ -34,6 +34,7 @@ class JobService:
         """Execute the job application agent and publish results."""
         from src.core.agent import JobApplicationAgent
 
+        agent = None
         try:
             logger.info("Starting job application workflow", task_id=task_id)
 
@@ -80,5 +81,7 @@ class JobService:
                 errors=[str(e)],
                 trace_id="",
             )
+        finally:
+            del agent
 
         self._producer.publish(TOPIC_JOB_RESULTS, task_id, response)

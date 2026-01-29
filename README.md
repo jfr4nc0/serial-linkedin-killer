@@ -42,13 +42,44 @@ docker compose up -d
 poetry run python scripts/cli.py --help
 ```
 
+## Outreach Workflow (Two-Phase)
+
+The outreach workflow uses role-based clustering to target employees by job function:
+
+```
+Phase 1: Search & Cluster (synchronous)
+  ├── Filter companies by industry/country/size
+  ├── Search employees at each company via LinkedIn
+  └── Cluster employees by role using LLM classification
+        ↓
+  Role Groups: Engineering, Finance, Sales, Marketing, HR/People, Operations, Executive, Other
+        ↓
+Phase 2: Message (async via Kafka)
+  ├── User selects which role groups to message
+  ├── User provides different templates per role group
+  └── Agent sends messages with per-group personalization
+```
+
+**Interactive CLI flow:**
+```bash
+poetry run python scripts/cli.py outreach --interactive
+
+# 1. Select company filters (industry, country, size)
+# 2. API searches employees and clusters by role
+# 3. See role groups with employee counts
+# 4. Select which groups to message
+# 5. Enter message template for each group
+# 6. Preview and confirm
+# 7. Messages sent, results displayed by role
+```
+
 ## CLI Commands
 
 ```bash
 # Job application workflow
 poetry run python scripts/cli.py run
 
-# Employee outreach (interactive TUI)
+# Employee outreach (interactive, two-phase)
 poetry run python scripts/cli.py outreach --interactive
 
 # Outreach with config (non-interactive)
@@ -75,9 +106,57 @@ poetry run python scripts/cli.py validate
 | `GET` | `/health` | Health check |
 | `POST` | `/api/jobs/apply` | Submit job application workflow |
 | `GET` | `/api/outreach/filters` | Get filter values (industry, country, size) |
-| `POST` | `/api/outreach/run` | Submit outreach workflow |
+| `POST` | `/api/outreach/search` | Phase 1: Search employees, cluster by role (sync) |
+| `POST` | `/api/outreach/send` | Phase 2: Send messages to selected groups (async) |
+| `POST` | `/api/outreach/run` | Legacy: Single-phase outreach (async) |
 
-POST endpoints return `{ task_id }` immediately. Results are published to Kafka topics.
+**Phase 1 - Search & Cluster:**
+```bash
+curl -X POST http://localhost:8080/api/outreach/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filters": {"industry": ["Technology"], "country": ["United States"]},
+    "credentials": {"email": "...", "password": "..."}
+  }'
+
+# Response:
+# {
+#   "session_id": "uuid",
+#   "role_groups": {
+#     "Engineering": [{"name": "...", "title": "...", "profile_url": "..."}],
+#     "Sales": [...],
+#     ...
+#   },
+#   "total_employees": 42,
+#   "companies_processed": 5
+# }
+```
+
+**Phase 2 - Send Messages:**
+```bash
+curl -X POST http://localhost:8080/api/outreach/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "uuid-from-phase-1",
+    "selected_groups": {
+      "Engineering": {
+        "enabled": true,
+        "message_template": "Hi {employee_name}, I saw you work at {company_name}...",
+        "template_variables": {"my_name": "John", "my_role": "Recruiter"}
+      },
+      "Sales": {
+        "enabled": true,
+        "message_template": "Hello {employee_name}, I have an opportunity...",
+        "template_variables": {"my_name": "John"}
+      }
+    },
+    "credentials": {"email": "...", "password": "..."},
+    "warm_up": false
+  }'
+
+# Response: { "task_id": "uuid" }
+# Results delivered via Kafka topic: outreach-results
+```
 
 ## Configuration
 
@@ -139,6 +218,21 @@ CSV at `data/free_company_dataset.csv`, imported into SQLite via `import-dataset
 | `size` | `51-200` |
 | `linkedin_url` | `linkedin.com/company/acme` |
 | `locality` | `san francisco` |
+
+## Role Categories
+
+The LLM clusters employee job titles into these categories:
+
+| Category | Example Titles |
+|----------|----------------|
+| Engineering | Software Engineer, DevOps, Architect, QA |
+| Finance | CFO, Financial Analyst, Controller, Accountant |
+| Sales | Sales Rep, Account Executive, SDR, Business Dev |
+| Marketing | Marketing Manager, Content, Growth, Brand |
+| HR/People | Recruiter, Talent Acquisition, People Ops |
+| Operations | Project Manager, Program Manager, Supply Chain |
+| Executive | CEO, CTO, VP, Director, Head of |
+| Other | Unclassified titles |
 
 ## Development
 
