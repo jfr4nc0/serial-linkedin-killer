@@ -1,6 +1,10 @@
-# Seriel LinkedIn Killer
+# Serial LinkedIn Killer
 
-AI-powered system for automating LinkedIn job applications and employee outreach. Three-layer architecture: CLI → Core Agent API (FastAPI + Kafka) → LinkedIn MCP Server (Selenium).
+Agent system for automating LinkedIn job applications and employee outreach. Three-layer architecture: CLI → Core Agent API (FastAPI + Kafka) → LinkedIn MCP Server (Selenium).
+
+<p align="center">
+  <img src="assets/logo.png" alt="Serial LinkedIn Killer Logo" width="900">
+</p>
 
 ## Architecture
 
