@@ -94,7 +94,7 @@ class JobApplicationCLI:
                 True, "--interactive/--no-interactive", help="Interactive mode"
             ),
             warmup: bool = typer.Option(
-                False, "--warmup", is_flag=True, help="Warm-up mode: cap at 10 messages"
+                False, "--warmup/--no-warmup", help="Warm-up mode: cap at 10 messages"
             ),
         ):
             """Run the employee outreach workflow."""

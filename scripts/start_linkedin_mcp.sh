@@ -1,38 +1,26 @@
 #!/bin/bash
 
 # Start script for LinkedIn MCP Server
-# Sets up Xvfb and runs the LinkedIn MCP server
-# Supports both direct TCP server and uvicorn if available
+# Works both locally (real display) and in Docker (Xvfb)
 
-set -e  # Exit on any error
+set -e
 
-# Start Xvfb virtual display
-echo "Starting Xvfb virtual display..."
-Xvfb :99 -screen 0 1920x1080x24 &
-
-# Wait a moment for Xvfb to start
-sleep 2
-
-# Export display variable
-export DISPLAY=:99
-
-# Set environment variables
-export PYTHONPATH=/app
-export CHROME_BIN=/usr/bin/google-chrome
-export CHROME_PATH=/usr/bin/google-chrome
-
-# Set MCP server host and port (default to all interfaces in container)
+export PYTHONPATH=${PYTHONPATH:-$(cd "$(dirname "$0")/.." && pwd)}
 export MCP_SERVER_HOST=${MCP_SERVER_HOST:-0.0.0.0}
 export MCP_SERVER_PORT=${MCP_SERVER_PORT:-3000}
 
-echo "Environment: MCP_SERVER_HOST=$MCP_SERVER_HOST, MCP_SERVER_PORT=$MCP_SERVER_PORT"
-
-# Check if we should use uvicorn mode
-if [[ "${USE_UVICORN:-false}" == "true" ]]; then
-    echo "Starting LinkedIn MCP Server via uvicorn..."
-    # Note: Standard MCP uses TCP not HTTP, so this is just if there's a uvicorn adapter
-    exec python -m src.linkedin_mcp.linkedin.linkedin_server
-else
-    echo "Starting LinkedIn MCP Server (TCP mode)..."
-    exec python -m src.linkedin_mcp.linkedin.linkedin_server
+# Start Xvfb only if no display is available and Xvfb exists
+if [ -z "$DISPLAY" ]; then
+    if command -v Xvfb &> /dev/null; then
+        echo "Starting Xvfb virtual display..."
+        Xvfb :99 -screen 0 1920x1080x24 &
+        sleep 2
+        export DISPLAY=:99
+    else
+        echo "Warning: No display and Xvfb not found. Browser may fail in headless mode."
+    fi
 fi
+
+echo "MCP Server: $MCP_SERVER_HOST:$MCP_SERVER_PORT"
+
+exec python -m src.linkedin_mcp.linkedin.linkedin_server

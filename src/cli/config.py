@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 
 
 class JobSearchConfig(BaseModel):
@@ -16,13 +16,15 @@ class JobSearchConfig(BaseModel):
     monthly_salary: int
     limit: int = 20
 
-    @validator("monthly_salary")
+    @field_validator("monthly_salary")
+    @classmethod
     def salary_must_be_positive(cls, v):
         if v <= 0:
             raise ValueError("Monthly salary must be positive")
         return v
 
-    @validator("limit")
+    @field_validator("limit")
+    @classmethod
     def limit_must_be_reasonable(cls, v):
         if v <= 0 or v > 100:
             raise ValueError("Job limit must be between 1 and 100")
