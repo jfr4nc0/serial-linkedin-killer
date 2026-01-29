@@ -1,5 +1,5 @@
 import asyncio
-from typing import List
+from typing import Any, Dict, List, Optional, Union
 
 from src.core.model import ApplicationRequest, ApplicationResult, CVAnalysis, JobResult
 from src.core.providers.linkedin_mcp_client import LinkedInMCPClient
@@ -12,11 +12,9 @@ class LinkedInMCPClientSync:
     """
 
     def __init__(self, server_host: str = None, server_port: int = None):
-        # For backward compatibility, convert host/port to command
-        # In a real implementation, you might want to keep TCP support
-        # For now, we'll use stdio with a default command
-        server_command = "python -m linkedin_mcp.linkedin.linkedin_server"
-        self.client = LinkedInMCPClient(server_command=server_command)
+        # For MCP, we use stdio transport with server command
+        # server_host and server_port are kept for backward compatibility but not used
+        self.client = LinkedInMCPClient()
 
     def search_jobs(
         self,
@@ -38,10 +36,53 @@ class LinkedInMCPClientSync:
 
         return asyncio.run(_search())
 
+    def search_employees(
+        self,
+        company_linkedin_url: str,
+        company_name: str,
+        email: str,
+        password: str,
+        limit: int = 10,
+        trace_id: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Synchronous wrapper for search_employees."""
+
+        async def _search():
+            async with self.client as client:
+                return await client.search_employees(
+                    company_linkedin_url, company_name, email, password, limit, trace_id
+                )
+
+        return asyncio.run(_search())
+
+    def send_message(
+        self,
+        employee_profile_url: str,
+        employee_name: str,
+        message: str,
+        email: str,
+        password: str,
+        trace_id: str = None,
+    ) -> Dict[str, Any]:
+        """Synchronous wrapper for send_message."""
+
+        async def _send():
+            async with self.client as client:
+                return await client.send_message(
+                    employee_profile_url,
+                    employee_name,
+                    message,
+                    email,
+                    password,
+                    trace_id,
+                )
+
+        return asyncio.run(_send())
+
     def easy_apply_for_jobs(
         self,
         applications: List[ApplicationRequest],
-        cv_analysis: CVAnalysis,
+        cv_analysis: Union[CVAnalysis, Dict[str, Any]],
         email: str,
         password: str,
         trace_id: str = None,

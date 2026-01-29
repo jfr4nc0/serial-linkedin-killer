@@ -1,0 +1,119 @@
+{
+  "name": "Joan Canossa",
+  "email": "joan.canossa@example.com",
+  "location": "Ciudad Autónoma de Buenos Aires, Argentina.",
+  "phone": "(+54) 112171370",
+  "work_experience": [
+    {
+      "title": "Software Engineer",
+      "company": "Mercado Libre",
+      "start_date": "11-2024",
+      "end_date": "11-2025",
+      "description": "Designed and developed the integration of a robotics orchestration system for automated inventory quality management across the company's multiple warehouses. This implementation significantly improved efficiency and precision in quality control processes, reducing errors and optimizing logistical workflows. Performed corrective and evolutionary maintenance on key applications, proactively identifying and resolving incidents to ensure service continuity and software stability. Implemented new functionalities designed to optimize inventory quality management operations, enhancing process efficiency and precision.",
+      "stack": [
+        "Java",
+        "Spring",
+        "JavaScript",
+        "TypeScript",
+        "MySQL",
+        "DataDog",
+        "Grafana",
+        "Kibana",
+        "Docker",
+        "Langchain",
+        "Langgraph",
+        "Python"
+      ]
+    },
+    {
+      "title": "Backend Developer",
+      "company": "Global66",
+      "start_date": "11-2023",
+      "end_date": "11-2024",
+      "description": "Designed and developed the backend for a PSP (Payment Service Provider) for the Argentinian market, managing end-to-end integration with banking providers, and implementing robust and scalable solutions, ensuring the security and high availability of financial transactions. Designed and developed new functionalities and performance enhancements for key applications within the ecosystem, contributing to the optimization of user experience and operational efficiency.",
+      "stack": ["Java", "Kotlin", "Spring", "MySQL", "AWS", "Docker", "Python"]
+    },
+    {
+      "title": "Backend Developer",
+      "company": "Fusap",
+      "start_date": "03-2023",
+      "end_date": "11-2023",
+      "description": "Managed and executed the complete migration of a critical system for the agricultural industry. Performed corrective and evolutionary maintenance on existing applications, identifying and resolving incidents to ensure service continuity and software stability.",
+      "stack": ["Java", "Kotlin", "Spring", "MySQL", "AWS", "Docker", "Python"]
+    },
+    {
+      "title": "Web Developer",
+      "company": "FORUM",
+      "start_date": "03-2022",
+      "end_date": "03-2023",
+      "description": "Designed, developed, and implemented a full-stack internal billing system with direct integration to AFIP. This solution automated the invoice issuance process and improved tax compliance.",
+      "stack": ["Java", "PHP", "MySQL", "JavaScript"]
+    }
+  ],
+  "education": [
+    {
+      "title": "Bachelor's Degree in Information Technology Management",
+      "institution": "UADE",
+      "start_date": "08-2024",
+      "end_date": "06-2025"
+    },
+    {
+      "title": "Systems Information Engineering",
+      "institution": "UTN",
+      "start_date": "03-2021",
+      "end_date": "03-2024"
+    }
+  ],
+  "certifications": [
+    {
+      "title": "AWS Certified Solutions Architect - Associate",
+      "institution": "AWS",
+      "start_date": "03-2024",
+      "end_date": "03-2025"
+    }
+  ],
+  "languages": [
+    {
+      "title": "Spanish",
+      "level": "Native"
+    },
+    {
+      "title": "English",
+      "level": "Fluent"
+    }
+  ],
+  "skills": [
+    {
+      "title": "Java",
+      "level": "Advanced"
+    },
+    {
+      "title": "Kotlin",
+      "level": "Advanced"
+    },
+    {
+      "title": "Spring",
+      "level": "Advanced"
+    },
+    {
+      "title": "MySQL",
+      "level": "Advanced"
+    },
+    {
+      "title": "AWS",
+      "level": "Advanced"
+    },
+    {
+      "title": "Docker",
+      "level": "Advanced"
+    },
+    {
+      "title": "Python",
+      "level": "Advanced"
+    },
+    {
+      "title": "JavaScript",
+      "level": "Advanced"
+    }
+  ]
+}

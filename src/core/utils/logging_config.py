@@ -45,6 +45,11 @@ def configure_core_agent_logging(
         "trace_id={extra[trace_id]} - <level>{message}</level>"
     )
 
+    # Ensure trace_id is always present in extra
+    logger.configure(
+        patcher=lambda record: record["extra"].setdefault("trace_id", "no-trace")
+    )
+
     # Add console handler
     logger.add(
         sys.stderr,
@@ -62,22 +67,26 @@ def configure_core_agent_logging(
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_format = (
-            "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
-            "{level: <8} | "
-            "core-agent | "
-            "{name}:{function}:{line} | "
-            "trace_id={extra[trace_id]} | "
-            "{message}"
-        )
+        def format_func(record):
+            """Custom format function to handle missing trace_id."""
+            trace_id = record.get("extra", {}).get("trace_id", "no-trace")
+            base_format = (
+                "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
+                "{level: <8} | "
+                "core-agent | "
+                "{name}:{function}:{line} | "
+                f"trace_id={trace_id} | "
+                "{message}"
+            )
+            return base_format
 
         logger.add(
             log_file,
-            format=file_format,
+            format=format_func,
             level=log_level,
             rotation="10 MB",
             retention="7 days",
-            compression="gzip",
+            compression="gz",
             backtrace=True,
             diagnose=True,
             enqueue=True,

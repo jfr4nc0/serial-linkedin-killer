@@ -9,8 +9,7 @@ from src.core.model.job_search_request import JobSearchRequest
 class JobApplicationAgentState(TypedDict):
     # Input from user
     job_searches: List[JobSearchRequest]
-    cv_file_path: str
-    cv_content: str
+    cv_content: str  # JSON string containing CV data
     user_credentials: Dict[str, str]  # {email, password}
 
     # Processing state

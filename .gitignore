@@ -1,6 +1,9 @@
 poetry.lock
 .env
 .idea/*
+.venv
+
+data/*
 
 # Python cache files
 __pycache__/
@@ -69,3 +72,7 @@ tmp/
 results/
 data/*.pdf
 !data/.gitkeep
+CLAUDE.md
+.mypy_cache
+.claude
+.ropeproject

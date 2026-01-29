@@ -1,205 +1,246 @@
-# LinkedIn Job Application Automation System
+# LinkedIn Job Application & Outreach Automation
 
-A comprehensive AI-powered system for automating LinkedIn job applications using FastMCP, LangGraph, and intelligent form filling.
+AI-powered system for automating LinkedIn job applications and employee outreach. Three-layer architecture: CLI → Core Agent API (FastAPI + Kafka) → LinkedIn MCP Server (Selenium).
 
 ## Architecture
 
-The system uses a **single-container architecture** with Hugging Face Serverless API for cloud-based AI inference:
-
-### Core Job Application Agent (`core-agent` container)
-- **MCP Client**: Uses official `mcp` SDK with stdio transport for protocol communication
-- **MCP Server**: LinkedIn server runs as subprocess via stdio (not HTTP)
-- **LangGraph Workflow**: Orchestrates the complete job application process
-- **CV Analysis**: AI-powered PDF CV reading and structured data extraction
-- **Job Filtering**: Intelligent job matching based on CV profile alignment
-- **RPA Automation**: Selenium-based LinkedIn interaction with anti-detection
-- **AI Form Filling**: Uses Hugging Face Serverless API for intelligent form completion
-
-### AI Inference
-- **Hugging Face Serverless API**: Cloud-based inference with Qwen3-30B-A3B-Thinking
-- **No GPU Required**: Serverless inference eliminates infrastructure complexity
-- **Scalable**: Automatic scaling and high availability
-- **Cost Effective**: Pay-per-use pricing model
-
-## Features
-
- **AI-Powered CV Analysis**: Extracts skills, experience, education from PDF CVs
- **Intelligent Job Search**: Multi-criteria LinkedIn job searching with pagination
- **Smart Job Filtering**: AI-based job relevance scoring using CV profile
- **Advanced Form Filling**: AI handles dynamic LinkedIn application forms
- **Anti-Detection RPA**: Randomized delays and user-agent rotation
- **Containerized Architecture**: Scalable Docker-based deployment
- **Error Handling**: Comprehensive error recovery and logging
-
-## Usage Options
-
-### 🖥️ Terminal Client (Recommended)
-Interactive command-line interface with rich formatting and real-time progress.
-
-```bash
-# Quick start with interactive setup
-python job_applier.py run --interactive
-
-# Use configuration file
-python job_applier.py run --config ./examples/config.yaml
-
-# Initialize configuration
-python job_applier.py init
+```
+CLI (local)
+  ├── HTTP POST → Core Agent API (Docker) → returns task_id
+  │                  ├── JobApplicationAgent (LangGraph)
+  │                  └── EmployeeOutreachAgent (LangGraph)
+  │                        ↓
+  │                  Kafka Producer → [job-results / outreach-results]
+  │                        ↓
+  └── Kafka Consumer ← receives results
+                              ↓
+                  LinkedIn MCP Server (Docker) → Selenium browser automation
 ```
 
-### 🐳 Docker Deployment
-Full containerized deployment with MCP server architecture.
-
-```bash
-# Build and start services
-docker-compose up -d
-```
+**Services (docker-compose):**
+- `kafka` — KRaft mode, message broker
+- `core-agent` — FastAPI API on port 8080, orchestrates workflows
+- `linkedin-mcp-server` — FastMCP server on port 3000, browser automation
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.12+ (for terminal client) OR Docker and Docker Compose
-- LinkedIn account credentials
-- PDF CV file
-- Hugging Face account and API token (for serverless inference)
-
-### 1. Clone and Setup
 ```bash
-git clone <repository-url>
-cd serial-job-applier
-```
-
-### 2. Terminal Client Setup (Quick Start)
-
-```bash
-# Install dependencies
-pip install poetry
+# Install
 poetry install
 
-# Set environment variables (recommended for security)
-export LINKEDIN_EMAIL="your-email@example.com"
+# Set credentials
+export LINKEDIN_EMAIL="your-email"
 export LINKEDIN_PASSWORD="your-password"
-export CV_FILE_PATH="./data/cv.pdf"
-export HUGGING_FACE_HUB_TOKEN="your-hf-token"
-export MCP_SERVER_HOST="localhost"  # Optional - defaults to localhost
-export MCP_SERVER_PORT="3000"       # Optional - defaults to 3000
 
-# Or use .env file
-cp .env.example .env
-# Edit .env with your actual values
+# Import company dataset into SQLite (one-time, for outreach)
+poetry run python scripts/cli.py import-dataset
 
-# Place your CV file
-cp /path/to/your/cv.pdf data/cv.pdf
+# Start services
+docker compose up -d
 
-# Run interactive setup
-python job_applier.py run --interactive
+# Run CLI
+poetry run python scripts/cli.py --help
 ```
 
-### 3. Docker Setup (Full System)
-Create `.env` file:
+## Outreach Workflow (Two-Phase)
+
+The outreach workflow uses role-based clustering to target employees by job function:
+
+```
+Phase 1: Search & Cluster (synchronous)
+  ├── Filter companies by industry/country/size
+  ├── Search employees at each company via LinkedIn
+  └── Cluster employees by role using LLM classification
+        ↓
+  Role Groups: Engineering, Finance, Sales, Marketing, HR/People, Operations, Executive, Other
+        ↓
+Phase 2: Message (async via Kafka)
+  ├── User selects which role groups to message
+  ├── User provides different templates per role group
+  └── Agent sends messages with per-group personalization
+```
+
+**Interactive CLI flow:**
 ```bash
-LINKEDIN_EMAIL=your-email@example.com
-LINKEDIN_PASSWORD=your-password
-CV_FILE_PATH=/app/data/cv.pdf
-HUGGING_FACE_HUB_TOKEN=your-hf-token-here
+poetry run python scripts/cli.py outreach --interactive
+
+# 1. Select company filters (industry, country, size)
+# 2. API searches employees and clusters by role
+# 3. See role groups with employee counts
+# 4. Select which groups to message
+# 5. Enter message template for each group
+# 6. Preview and confirm
+# 7. Messages sent, results displayed by role
 ```
 
-### 3. Prepare CV File
-```bash
-mkdir -p data
-cp /path/to/your/cv.pdf data/cv.pdf
-```
-
-### 4. Start the System
-```bash
-# Build and start the core agent
-docker-compose up -d
-
-# Check core agent logs
-docker-compose logs -f core-agent
-```
-
-### 5. The job application workflow runs automatically when the container starts
-
-## Terminal Client Features
-
-### 🎯 Command Overview
-- **`run`**: Execute the complete job application workflow
-- **`init`**: Create and configure a new configuration file
-- **`validate`**: Validate configuration files
-- **`test-connection`**: Test MCP server connectivity
-
-### 🎨 Output Formats
-- **Rich**: Beautiful terminal UI with colors, progress bars, and tables
-- **Simple**: Plain text output for logging and scripting
-- **JSON**: Machine-readable output for automation
-
-### 📋 Configuration Management
-- **YAML Configuration**: Human-readable configuration files
-- **Environment Variables**: Secure credential management
-- **Interactive Setup**: Step-by-step configuration wizard
-- **Validation**: Comprehensive configuration validation
-
-### 📊 Progress Tracking
-- **Real-time Status**: Live workflow progress updates
-- **Results Storage**: Automatic saving of workflow results
-- **Error Reporting**: Detailed error analysis and troubleshooting
-- **Logging**: Configurable logging for debugging
-
-### 🔧 Usage Examples
+## CLI Commands
 
 ```bash
-# Interactive job search setup
-python job_applier.py run --interactive
+# Job application workflow
+poetry run python scripts/cli.py run
 
-# Use configuration file
-python job_applier.py run --config ./examples/config.yaml
+# Employee outreach (interactive, two-phase)
+poetry run python scripts/cli.py outreach --interactive
 
-# JSON output for automation
-python job_applier.py run --format json --save
+# Outreach with config (non-interactive)
+poetry run python scripts/cli.py outreach --no-interactive
 
-# Test MCP server connection
-python job_applier.py test-connection --mcp-host localhost --mcp-port 3000
+# Warm-up mode (cap at 10 messages)
+poetry run python scripts/cli.py outreach --warmup
 
-# Create configuration file
-python job_applier.py init --config ./my-config.yaml
+# Import company CSV into SQLite
+poetry run python scripts/cli.py import-dataset
+
+# Test API connection
+poetry run python scripts/cli.py test-connection
+
+# Init/validate config
+poetry run python scripts/cli.py init
+poetry run python scripts/cli.py validate
 ```
 
-For detailed CLI usage, see [CLI_USAGE.md](CLI_USAGE.md).
+## API Endpoints
 
-## System Components
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/api/jobs/apply` | Submit job application workflow |
+| `GET` | `/api/outreach/filters` | Get filter values (industry, country, size) |
+| `POST` | `/api/outreach/search` | Phase 1: Search employees, cluster by role (sync) |
+| `POST` | `/api/outreach/send` | Phase 2: Send messages to selected groups (async) |
+| `POST` | `/api/outreach/run` | Legacy: Single-phase outreach (async) |
 
-### MCP Tools
-- **`search_jobs`**: LinkedIn job search with Easy Apply filtering
-- **`easy_apply_for_jobs`**: AI-powered job application with form filling
+**Phase 1 - Search & Cluster:**
+```bash
+curl -X POST http://localhost:8080/api/outreach/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filters": {"industry": ["Technology"], "country": ["United States"]},
+    "credentials": {"email": "...", "password": "..."}
+  }'
 
-### Core Services
-- **`JobApplicationAgent`**: Main orchestration agent with LangGraph workflow
-- **`LinkedInMCPClient`**: HTTP client for MCP protocol communication
-- **`EasyApplyAgent`**: AI form analysis and filling agent
-- **`BrowserManager`**: Selenium automation with anti-detection
+# Response:
+# {
+#   "session_id": "uuid",
+#   "role_groups": {
+#     "Engineering": [{"name": "...", "title": "...", "profile_url": "..."}],
+#     "Sales": [...],
+#     ...
+#   },
+#   "total_employees": 42,
+#   "companies_processed": 5
+# }
+```
 
-### AI Models
-- **Qwen3-30B-A3B-Thinking**: Advanced reasoning model via Hugging Face Serverless API
-- **Serverless Inference**: Cloud-based high-performance inference
-- **PDF Processing**: PyPDF2 and pdfplumber for CV text extraction
+**Phase 2 - Send Messages:**
+```bash
+curl -X POST http://localhost:8080/api/outreach/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "uuid-from-phase-1",
+    "selected_groups": {
+      "Engineering": {
+        "enabled": true,
+        "message_template": "Hi {employee_name}, I saw you work at {company_name}...",
+        "template_variables": {"my_name": "John", "my_role": "Recruiter"}
+      },
+      "Sales": {
+        "enabled": true,
+        "message_template": "Hello {employee_name}, I have an opportunity...",
+        "template_variables": {"my_name": "John"}
+      }
+    },
+    "credentials": {"email": "...", "password": "..."},
+    "warm_up": false
+  }'
 
-## Workflow
+# Response: { "task_id": "uuid" }
+# Results delivered via Kafka topic: outreach-results
+```
 
-1. **CV Analysis**: Extract and structure data from PDF CV
-2. **Job Search**: Multi-criteria LinkedIn search via MCP protocol
-3. **Job Filtering**: AI-powered relevance scoring based on CV profile
-4. **Application**: Intelligent form filling for each selected job
-5. **Results**: Comprehensive reporting of application outcomes
+## Configuration
 
-## Dependencies
+All config lives in `config/agent.yaml`:
 
-- **Core**: Python 3.12, LangGraph, LangChain, FastMCP
-- **RPA**: Selenium, undetected-chromedriver, BeautifulSoup4
-- **AI**: Hugging Face Serverless API (Qwen3-30B-A3B-Thinking), LangChain-HuggingFace
-- **PDF**: PyPDF2, pdfplumber
-- **Infrastructure**: Docker
+```yaml
+llm:
+  base_url: "http://localhost:8088/v1"
+  api_key: "not-needed"
+  temperature: 0.1
+
+mcp_server:
+  host: "localhost"
+  port: 8000
+
+outreach:
+  dataset_path: "./data/free_company_dataset.csv"
+  db_path: "./data/companies.db"
+  employees_per_company: 10
+  daily_message_limit: 50
+  delay_between_messages_min: 30.0
+  delay_between_messages_max: 120.0
+
+kafka:
+  bootstrap_servers: "localhost:9092"
+
+api:
+  host: "0.0.0.0"
+  port: 8080
+```
+
+Environment variables override config: `LINKEDIN_EMAIL`, `LINKEDIN_PASSWORD`, `KAFKA_BOOTSTRAP_SERVERS`, `LOCAL_LLM_BASE_URL`, `MCP_SERVER_HOST`, `MCP_SERVER_PORT`.
+
+## CV Data
+
+Structured JSON at `data/cv_data.json`:
+
+```json
+{
+  "name": "string",
+  "work_experience": [
+    { "title": "string", "company": "string", "start_date": "MM-YYYY", "end_date": "MM-YYYY", "stack": ["string"] }
+  ],
+  "education": [{ "title": "string", "institution": "string" }],
+  "skills": [{ "title": "string", "level": "Advanced|Intermediate|Basic" }],
+  "languages": [{ "title": "string", "level": "Native|Fluent|Intermediate|Basic" }]
+}
+```
+
+## Company Dataset
+
+CSV at `data/free_company_dataset.csv`, imported into SQLite via `import-dataset` command.
+
+| Column | Example |
+|--------|---------|
+| `name` | `acme corp` |
+| `industry` | `software` |
+| `country` | `united states` |
+| `size` | `51-200` |
+| `linkedin_url` | `linkedin.com/company/acme` |
+| `locality` | `san francisco` |
+
+## Role Categories
+
+The LLM clusters employee job titles into these categories:
+
+| Category | Example Titles |
+|----------|----------------|
+| Engineering | Software Engineer, DevOps, Architect, QA |
+| Finance | CFO, Financial Analyst, Controller, Accountant |
+| Sales | Sales Rep, Account Executive, SDR, Business Dev |
+| Marketing | Marketing Manager, Content, Growth, Brand |
+| HR/People | Recruiter, Talent Acquisition, People Ops |
+| Operations | Project Manager, Program Manager, Supply Chain |
+| Executive | CEO, CTO, VP, Director, Head of |
+| Other | Unclassified titles |
+
+## Development
+
+```bash
+poetry install
+poetry run pytest tests/
+```
 
 ## License
 
-This project is for educational and research purposes. Ensure compliance with LinkedIn's Terms of Service and applicable laws when using automated tools.
+Educational and research purposes. Ensure compliance with LinkedIn's Terms of Service.

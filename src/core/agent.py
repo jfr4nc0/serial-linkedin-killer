@@ -1,3 +1,4 @@
+import json
 import uuid
 from typing import Any, Dict, List
 
@@ -11,6 +12,7 @@ from src.core.model.job_search_request import JobSearchRequest
 from src.core.observability.langfuse_config import get_langfuse_config_for_langgraph
 from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
 from src.core.providers.llm_client import get_llm_client
+from src.core.tools.cv_loader import extract_cv_analysis, load_cv_data
 from src.core.tools.tools import analyze_cv_structure, read_pdf_cv
 from src.core.utils.logging_config import get_core_agent_logger
 
@@ -34,77 +36,21 @@ class JobApplicationAgent:
         workflow = StateGraph(JobApplicationAgentState)
 
         # Add nodes
-        workflow.add_node("read_cv_node", self.read_cv_node)
         workflow.add_node("search_jobs_node", self.search_jobs_node)
         workflow.add_node("filter_jobs_node", self.filter_jobs_node)
         workflow.add_node("apply_to_jobs_node", self.apply_to_jobs_node)
 
         # Define the workflow flow
-        workflow.set_entry_point("read_cv_node")
-        workflow.add_edge("read_cv_node", "search_jobs_node")
+        workflow.set_entry_point("search_jobs_node")
         workflow.add_edge("search_jobs_node", "filter_jobs_node")
         workflow.add_edge("filter_jobs_node", "apply_to_jobs_node")
         workflow.add_edge("apply_to_jobs_node", END)
 
-        # Compile with Langfuse observability if configured
-        langfuse_config = get_langfuse_config_for_langgraph()
-        if langfuse_config:
-            logger.info("LangGraph compiled with Langfuse observability enabled")
-            return workflow.compile(**langfuse_config)
-        else:
-            logger.info("LangGraph compiled without observability")
-            return workflow.compile()
-
-    def read_cv_node(self, state: JobApplicationAgentState) -> Dict[str, Any]:
-        """Read and analyze the CV file."""
-        trace_id = state.get("trace_id", str(uuid.uuid4()))
-        cv_file_path = state.get("cv_file_path", "unknown")
-
-        # Use core agent logger with trace ID
-        agent_logger = get_core_agent_logger(trace_id)
-
-        try:
-            agent_logger.info("Starting CV analysis", cv_file_path=cv_file_path)
-
-            # Extract text from PDF
-            cv_content = read_pdf_cv.invoke({"file_path": state["cv_file_path"]})
-
-            # Analyze CV structure with AI
-            cv_analysis = analyze_cv_structure.invoke({"cv_text": cv_content})
-
-            agent_logger.info(
-                "CV analysis completed successfully",
-                cv_content_length=len(cv_content) if cv_content else 0,
-                skills_found=(
-                    len(cv_analysis.get("skills", []))
-                    if isinstance(cv_analysis, dict)
-                    else "unknown"
-                ),
-            )
-
-            return {
-                **state,
-                "trace_id": trace_id,
-                "cv_content": cv_content,
-                "cv_analysis": cv_analysis,
-                "current_status": "CV analyzed successfully",
-            }
-
-        except Exception as e:
-            error_msg = f"Failed to read/analyze CV: {str(e)}"
-            agent_logger.error(
-                "CV analysis failed",
-                cv_file_path=cv_file_path,
-                error=error_msg,
-                error_type=type(e).__name__,
-            )
-
-            return {
-                **state,
-                "trace_id": trace_id,
-                "errors": state.get("errors", []) + [error_msg],
-                "current_status": "CV analysis failed",
-            }
+        # Compile the graph - Langfuse observability is now handled during invoke
+        # Use bound logger for setup messages
+        setup_logger = logger.bind(trace_id="setup")
+        setup_logger.info("LangGraph compiled - observability handled during invoke")
+        return workflow.compile()
 
     def search_jobs_node(self, state: JobApplicationAgentState) -> Dict[str, Any]:
         """Search for jobs using all provided search criteria via MCP protocol."""
@@ -276,10 +222,13 @@ class JobApplicationAgent:
                 }
 
             # Call LinkedIn MCP easy_apply_for_jobs tool with trace_id
+            # Parse CV data from JSON string to pass as dict
+            cv_data_dict = json.loads(state["cv_content"])
+
             mcp_client = LinkedInMCPClientSync(self.server_host, self.server_port)
             application_results = mcp_client.easy_apply_for_jobs(
                 applications=applications,
-                cv_analysis=state["cv_analysis"],
+                cv_analysis=cv_data_dict,  # Pass full CV data as dict instead of analysis
                 email=state["user_credentials"]["email"],
                 password=state["user_credentials"]["password"],
                 trace_id=trace_id,  # Pass trace_id to MCP
@@ -309,16 +258,16 @@ class JobApplicationAgent:
     def run(
         self,
         job_searches: List[JobSearchRequest],
-        cv_file_path: str,
         user_credentials: Dict[str, str],
+        cv_data_path: str = None,
     ) -> JobApplicationAgentState:
         """
         Execute the complete job application workflow.
 
         Args:
             job_searches: List of job search criteria
-            cv_file_path: Path to the CV PDF file
             user_credentials: LinkedIn credentials {email, password}
+            cv_data_path: Path to CV JSON file (defaults to ./data/cv_data.json)
 
         Returns:
             Final agent state with all results
@@ -333,31 +282,53 @@ class JobApplicationAgent:
 
         # Get logger for this run
         agent_logger = get_core_agent_logger(trace_id)
+
+        # Load CV data from JSON
+        try:
+            cv_data = load_cv_data(cv_data_path)
+            cv_analysis = extract_cv_analysis(cv_data)
+            agent_logger.info(
+                "CV data loaded successfully",
+                name=cv_data.get("name"),
+                skills_count=len(cv_analysis["skills"]),
+                experience_years=cv_analysis["experience_years"],
+            )
+        except Exception as e:
+            error_msg = f"Failed to load CV data: {str(e)}"
+            agent_logger.error(error_msg)
+            # Return error state
+            return JobApplicationAgentState(
+                job_searches=job_searches,
+                cv_content="",
+                user_credentials=user_credentials,
+                current_search_index=0,
+                all_found_jobs=[],
+                filtered_jobs=[],
+                application_results=[],
+                cv_analysis={},
+                conversation_history=[],
+                errors=[error_msg],
+                total_jobs_found=0,
+                total_jobs_applied=0,
+                current_status="CV loading failed",
+                trace_id=trace_id,
+            )
+
         agent_logger.info(
             "Starting core agent run",
             job_searches_count=len(job_searches),
-            cv_file_path=cv_file_path,
+            cv_data_path=cv_data_path or "./data/cv_data.json",
         )
 
         initial_state = JobApplicationAgentState(
             job_searches=job_searches,
-            cv_file_path=cv_file_path,
-            cv_content="",
+            cv_content=json.dumps(cv_data),  # Store CV data as JSON string
             user_credentials=user_credentials,
             current_search_index=0,
             all_found_jobs=[],
             filtered_jobs=[],
             application_results=[],
-            cv_analysis={
-                "skills": [],
-                "experience_years": 0,
-                "previous_roles": [],
-                "education": [],
-                "certifications": [],
-                "domains": [],
-                "key_achievements": [],
-                "technologies": [],
-            },
+            cv_analysis=cv_analysis,  # Use extracted CV analysis
             conversation_history=[],
             errors=[],
             total_jobs_found=0,
@@ -366,9 +337,26 @@ class JobApplicationAgent:
             trace_id=trace_id,  # Add trace_id to state
         )
 
-        # Execute the workflow with Langfuse config that includes trace_id
-        langfuse_config = get_langfuse_config_for_langgraph(trace_id)
-        final_state = self.graph.invoke(initial_state, config=langfuse_config)
+        # Execute the workflow with Langfuse observability
+        from src.core.observability.langfuse_config import get_langfuse_callback
+
+        callback_handler = get_langfuse_callback()
+
+        # Prepare config for the invoke call
+        invoke_config = {"configurable": {"trace_id": trace_id}} if trace_id else {}
+
+        # Add callback handler if available (pass directly as callbacks param if supported)
+        if callback_handler:
+            try:
+                final_state = self.graph.invoke(
+                    initial_state, config=invoke_config, callbacks=[callback_handler]
+                )
+            except TypeError:
+                # Fallback: try passing in config
+                invoke_config["callbacks"] = [callback_handler]
+                final_state = self.graph.invoke(initial_state, config=invoke_config)
+        else:
+            final_state = self.graph.invoke(initial_state, config=invoke_config)
 
         agent_logger.info(
             "Core agent run completed",

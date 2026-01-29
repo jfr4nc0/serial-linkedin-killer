@@ -37,14 +37,20 @@ def configure_langfuse() -> Optional["LangfuseCallbackHandler"]:
             debug=os.getenv("LANGFUSE_DEBUG", "false").lower() == "true",
         )
 
-        logger.info(f"Langfuse observability configured - host: {host}")
+        # Use a bound logger with observability trace_id
+        obs_logger = logger.bind(trace_id="observability")
+        obs_logger.info(f"Langfuse observability configured - host: {host}")
         return callback_handler
 
     except ImportError:
-        logger.warning("Langfuse not installed - observability disabled")
+        # Use a bound logger with observability trace_id
+        obs_logger = logger.bind(trace_id="observability")
+        obs_logger.warning("Langfuse not installed - observability disabled")
         return None
     except Exception as e:
-        logger.error(f"Failed to configure Langfuse: {e}")
+        # Use a bound logger with observability trace_id
+        obs_logger = logger.bind(trace_id="observability")
+        obs_logger.error(f"Failed to configure Langfuse: {e}")
         return None
 
 

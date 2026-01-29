@@ -1,51 +1,81 @@
 import asyncio
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
-from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
+from dotenv import load_dotenv
+from fastmcp import Client
+from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
 
 from src.core.model import ApplicationRequest, ApplicationResult, CVAnalysis, JobResult
+
+# Load environment variables
+load_dotenv()
 
 
 class LinkedInMCPClient:
     """
-    Official MCP client for communicating with the LinkedIn MCP server.
-    Uses the proper MCP SDK for protocol communication over stdio.
+    Official FastMCP client for communicating with the LinkedIn MCP server.
+    Uses FastMCP's StdioTransport for protocol communication over stdio.
+    The client manages the LinkedIn MCP server lifecycle as a subprocess.
     """
 
-    def __init__(self, server_command: str = None):
-        # For stdio, we need a command to run the server
-        self.server_command = server_command or os.getenv(
-            "MCP_SERVER_COMMAND", "python -m linkedin_mcp.linkedin.linkedin_server"
-        )
-        self.session = None
-        self.stdio_client = None
+    def __init__(
+        self,
+        use_http: bool = True,
+        server_url: str = "http://localhost:8000/mcp",
+        keep_alive: bool = True,
+    ):
+        self.use_http = use_http
+
+        if use_http:
+            # Use StreamableHttpTransport - connect to running HTTP server
+            self.transport = StreamableHttpTransport(server_url)
+            self.client = Client(self.transport)
+        else:
+            # Use stdio transport - launch server as subprocess
+            env = {
+                "LINKEDIN_EMAIL": os.getenv("LINKEDIN_EMAIL"),
+                "LINKEDIN_PASSWORD": os.getenv("LINKEDIN_PASSWORD"),
+                "LINKEDIN_MCP_LOG_LEVEL": os.getenv("LINKEDIN_MCP_LOG_LEVEL", "INFO"),
+                "LINKEDIN_MCP_LOG_FILE": os.getenv("LINKEDIN_MCP_LOG_FILE"),
+            }
+            env = {k: v for k, v in env.items() if v is not None}
+
+            command_parts = [
+                "poetry",
+                "run",
+                "python",
+                "-m",
+                "src.linkedin_mcp.linkedin.linkedin_server",
+            ]
+            command = command_parts[0] if command_parts else "python"
+            args = command_parts[1:] if len(command_parts) > 1 else []
+
+            self.transport = StdioTransport(
+                command=command, args=args, env=env, keep_alive=keep_alive
+            )
+            self.client = Client(self.transport)
 
     async def __aenter__(self):
-        # Create stdio client and session
-        server_params = StdioServerParameters(command=self.server_command)
-        self.stdio_client = stdio_client(server=server_params)
-        self.read_stream, self.write_stream = await self.stdio_client.__aenter__()
-
-        # Initialize session
-        self.session = ClientSession(self.read_stream, self.write_stream)
-        await self.session.__aenter__()
-
-        # Initialize the server
-        await self.session.initialize()
-
+        # FastMCP client handles both HTTP and stdio connections
+        await self.client.__aenter__()
         return self
 
+    async def list_tools(self):
+        """
+        Discover available tools on the LinkedIn MCP server.
+
+        Returns:
+            List of available tools with their metadata
+        """
+        return await self.client.list_tools()
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.__aexit__(exc_type, exc_val, exc_tb)
-        if self.stdio_client:
-            await self.stdio_client.__aexit__(exc_type, exc_val, exc_tb)
+        await self.client.__aexit__(exc_type, exc_val, exc_tb)
 
     async def _call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
-        Call an MCP tool using the official MCP SDK.
+        Call an MCP tool using FastMCP Client.
 
         Args:
             tool_name: Name of the MCP tool to call
@@ -58,25 +88,26 @@ class LinkedInMCPClient:
             Exception: If the MCP call fails
         """
         try:
-            if not self.session:
-                raise Exception("MCP session not initialized")
+            # Call the tool using FastMCP Client with manual error checking
+            result = await self.client.call_tool(
+                tool_name, arguments, raise_on_error=False
+            )
 
-            # Call the tool using MCP SDK
-            result = await self.session.call_tool(tool_name, arguments)
+            # Check if the tool execution failed
+            if result.is_error:
+                error_content = (
+                    result.content[0].text if result.content else "Unknown error"
+                )
+                raise Exception(f"Tool '{tool_name}' execution failed: {error_content}")
 
-            # Extract content from MCP result
-            if hasattr(result, "content") and result.content:
-                # Handle different content types
-                if len(result.content) == 1 and hasattr(result.content[0], "text"):
-                    return result.content[0].text
-                else:
-                    # Return the raw content for complex responses
-                    return result.content
-            else:
-                raise Exception(f"No content returned from tool '{tool_name}'")
+            # FastMCP returns structured data directly
+            return result.data
 
         except Exception as e:
-            raise Exception(f"MCP tool call failed for '{tool_name}': {str(e)}")
+            transport_type = "HTTP" if self.use_http else "stdio"
+            raise Exception(
+                f"FastMCP tool call failed for '{tool_name}' via {transport_type}: {str(e)}"
+            )
 
     async def search_jobs(
         self,
@@ -117,22 +148,60 @@ class LinkedInMCPClient:
 
         result = await self._call_tool("search_jobs", arguments)
 
-        # Parse JSON result if it's a string
-        if isinstance(result, str):
-            import json
-
-            result = json.loads(result)
-
         # Convert result to JobResult format
         return [
             JobResult(id_job=job["id_job"], job_description=job["job_description"])
             for job in result
         ]
 
+    async def search_employees(
+        self,
+        company_linkedin_url: str,
+        company_name: str,
+        email: str,
+        password: str,
+        limit: int = 10,
+        trace_id: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Search for employees at a company on LinkedIn via MCP protocol."""
+        arguments = {
+            "company_linkedin_url": company_linkedin_url,
+            "company_name": company_name,
+            "email": email,
+            "password": password,
+            "limit": limit,
+        }
+        if trace_id:
+            arguments["trace_id"] = trace_id
+
+        return await self._call_tool("search_employees", arguments)
+
+    async def send_message(
+        self,
+        employee_profile_url: str,
+        employee_name: str,
+        message: str,
+        email: str,
+        password: str,
+        trace_id: str = None,
+    ) -> Dict[str, Any]:
+        """Send a message or connection request to a LinkedIn user via MCP protocol."""
+        arguments = {
+            "employee_profile_url": employee_profile_url,
+            "employee_name": employee_name,
+            "message": message,
+            "email": email,
+            "password": password,
+        }
+        if trace_id:
+            arguments["trace_id"] = trace_id
+
+        return await self._call_tool("send_message", arguments)
+
     async def easy_apply_for_jobs(
         self,
         applications: List[ApplicationRequest],
-        cv_analysis: CVAnalysis,
+        cv_analysis: Union[CVAnalysis, Dict[str, Any]],
         email: str,
         password: str,
         trace_id: str = None,
@@ -142,9 +211,10 @@ class LinkedInMCPClient:
 
         Args:
             applications: List of application requests with job_id and monthly_salary
-            cv_analysis: Structured CV analysis data for AI form filling
+            cv_analysis: CV data as dict (JSON structure) or CVAnalysis object for AI form filling
             email: LinkedIn email for authentication
             password: LinkedIn password for authentication
+            trace_id: Optional trace ID for correlation
 
         Returns:
             List of application results with id_job, success status, and optional error message
@@ -155,16 +225,22 @@ class LinkedInMCPClient:
             for app in applications
         ]
 
-        cv_analysis_dict = {
-            "skills": cv_analysis["skills"],
-            "experience_years": cv_analysis["experience_years"],
-            "previous_roles": cv_analysis["previous_roles"],
-            "education": cv_analysis["education"],
-            "certifications": cv_analysis["certifications"],
-            "domains": cv_analysis["domains"],
-            "key_achievements": cv_analysis["key_achievements"],
-            "technologies": cv_analysis["technologies"],
-        }
+        # Handle cv_analysis as either dict or CVAnalysis object
+        if isinstance(cv_analysis, dict):
+            # CV data is already a dict (JSON structure)
+            cv_analysis_dict = cv_analysis
+        else:
+            # Convert CVAnalysis to dict format
+            cv_analysis_dict = {
+                "skills": cv_analysis["skills"],
+                "experience_years": cv_analysis["experience_years"],
+                "previous_roles": cv_analysis["previous_roles"],
+                "education": cv_analysis["education"],
+                "certifications": cv_analysis["certifications"],
+                "domains": cv_analysis["domains"],
+                "key_achievements": cv_analysis["key_achievements"],
+                "technologies": cv_analysis["technologies"],
+            }
 
         arguments = {
             "applications": applications_dict,
@@ -178,12 +254,6 @@ class LinkedInMCPClient:
             arguments["trace_id"] = trace_id
 
         result = await self._call_tool("easy_apply_for_jobs", arguments)
-
-        # Parse JSON result if it's a string
-        if isinstance(result, str):
-            import json
-
-            result = json.loads(result)
 
         # Convert result to ApplicationResult format
         return [

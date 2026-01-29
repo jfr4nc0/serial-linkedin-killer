@@ -1,0 +1,46 @@
+llm:
+  base_url: "http://localhost:8088/v1"
+  api_key: "not-needed"
+  temperature: 0.1
+  max_tokens: 2000
+
+mcp_server:
+  host: "localhost"
+  port: 8000
+
+linkedin:
+  email: "" # or use LINKEDIN_EMAIL env var
+  password: "" # or use LINKEDIN_PASSWORD env var
+
+browser:
+  headless: false
+  use_undetected: true
+  browser_type: "chrome"
+
+outreach:
+  dataset_path: "./data/free_company_dataset.csv"
+  db_path: "./data/companies.db"
+  message_template_path: ""
+  message_template: ""
+  employees_per_company: 10
+  daily_message_limit: 50
+  delay_between_messages_min: 30.0
+  delay_between_messages_max: 120.0
+  filters:
+    industry: []
+    country: []
+    size: []
+
+cv:
+  file_path: "./data/cv_data.json"
+
+kafka:
+  bootstrap_servers: "localhost:9092"
+
+api:
+  host: "0.0.0.0"
+  port: 8080
+
+observability:
+  langfuse_enabled: false
+  log_level: "INFO"

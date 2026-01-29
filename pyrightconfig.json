@@ -1,4 +1,4 @@
 {
-  "venv": "serial-job-applier-5cNt4V2x-py3.12",
-  "venvPath": "/home/jcanossa/.cache/pypoetry/virtualenvs"
+  "venv": ".venv",
+  "venvPath": "."
 }
