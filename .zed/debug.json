@@ -19,6 +19,7 @@
     "adapter": "Debugpy",
     "module": "src.linkedin_mcp.linkedin.linkedin_server",
     "request": "launch",
+    "args": ["--http"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "envFile": "$ZED_WORKTREE_ROOT/.env"
   },

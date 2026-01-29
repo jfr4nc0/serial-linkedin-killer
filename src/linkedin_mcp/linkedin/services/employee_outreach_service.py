@@ -20,7 +20,13 @@ class EmployeeOutreachService(IEmployeeOutreachService):
 
     def __init__(self, config_path: str = None):
         self.config = load_config(config_path)
-        self.browser_manager = BrowserManager()
+        self.browser_manager = BrowserManager(
+            headless=self.config.browser.headless,
+            use_undetected=self.config.browser.use_undetected,
+            browser_type=self.config.browser.browser_type,
+            chrome_version=self.config.browser.chrome_version,
+            chrome_binary_path=self.config.browser.chrome_binary_path,
+        )
         self.employee_search_graph = EmployeeSearchGraph(
             browser_manager=self.browser_manager
         )

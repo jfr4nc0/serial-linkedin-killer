@@ -16,6 +16,8 @@ browser:
   headless: false
   use_undetected: true
   browser_type: "chrome"
+  chrome_version: 143  # Force ChromeDriver to match Chrome 143
+  # chrome_binary_path: "/usr/bin/google-chrome"  # Uncomment to specify Chrome binary
 
 outreach:
   dataset_path: "./data/free_company_dataset.csv"

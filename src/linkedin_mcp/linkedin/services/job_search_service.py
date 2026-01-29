@@ -1,5 +1,6 @@
 from typing import Dict, List
 
+from src.config.config_loader import load_config
 from src.linkedin_mcp.linkedin.graphs.job_search_graph import JobSearchGraph
 from src.linkedin_mcp.linkedin.interfaces.services import IJobSearchService
 from src.linkedin_mcp.linkedin.model.types import JobResult
@@ -12,9 +13,16 @@ from src.linkedin_mcp.linkedin.services.linkedin_auth_service import LinkedInAut
 class JobSearchService(IJobSearchService):
     """Service responsible for orchestrating complete LinkedIn job search workflow."""
 
-    def __init__(self):
-        # Create concrete implementations
-        self.browser_manager = BrowserManager()
+    def __init__(self, config_path: str = None):
+        self.config = load_config(config_path)
+        # Create concrete implementations with config
+        self.browser_manager = BrowserManager(
+            headless=self.config.browser.headless,
+            use_undetected=self.config.browser.use_undetected,
+            browser_type=self.config.browser.browser_type,
+            chrome_version=self.config.browser.chrome_version,
+            chrome_binary_path=self.config.browser.chrome_binary_path,
+        )
 
         # Inject dependencies into the graph
         self.search_graph = JobSearchGraph(browser_manager=self.browser_manager)

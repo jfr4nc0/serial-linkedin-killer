@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 from fastmcp import Client
@@ -22,10 +22,19 @@ class LinkedInMCPClient:
     def __init__(
         self,
         use_http: bool = True,
-        server_url: str = "http://localhost:8000/mcp",
+        server_url: Optional[str] = None,
         keep_alive: bool = True,
     ):
         self.use_http = use_http
+
+        # Build server URL from config if not provided
+        if server_url is None and use_http:
+            from src.config.config_loader import load_config
+
+            config = load_config()
+            host = os.getenv("MCP_SERVER_HOST", config.mcp_server.host)
+            port = os.getenv("MCP_SERVER_PORT", str(config.mcp_server.port))
+            server_url = f"http://{host}:{port}/mcp"
 
         if use_http:
             # Use StreamableHttpTransport - connect to running HTTP server
