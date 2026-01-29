@@ -1,4 +1,4 @@
-# LinkedIn Job Application & Outreach Automation
+# Seriel LinkedIn Killer
 
 AI-powered system for automating LinkedIn job applications and employee outreach. Three-layer architecture: CLI → Core Agent API (FastAPI + Kafka) → LinkedIn MCP Server (Selenium).
 
