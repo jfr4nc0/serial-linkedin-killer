@@ -30,10 +30,14 @@ class BrowserManagerService(IBrowserManager):
         headless: bool = False,
         use_undetected: bool = True,
         browser_type: str = "chrome",
+        chrome_version: Optional[int] = None,
+        chrome_binary_path: Optional[str] = None,
     ):
         self.headless = headless
         self.use_undetected = use_undetected
         self.browser_type = browser_type.lower()
+        self.chrome_version = chrome_version
+        self.chrome_binary_path = chrome_binary_path
         self.driver: Optional[webdriver.Chrome] = None
         self.wait: Optional[WebDriverWait] = None
 
@@ -60,39 +64,33 @@ class BrowserManagerService(IBrowserManager):
         chrome_user_data = os.path.expanduser("~/chrome")
         options.add_argument(f"--user-data-dir={chrome_user_data}")
 
+        # Set custom Chrome binary path if specified
+        if self.chrome_binary_path:
+            options.binary_location = self.chrome_binary_path
+
         return options
 
     def _start_firefox(self) -> webdriver.Firefox:
         """Start Firefox as fallback when Chrome fails."""
-        import tempfile
-
-        from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
-
         firefox_options = FirefoxOptions()
 
         if self.headless:
             firefox_options.add_argument("--headless")
 
-        # Create a completely clean temporary profile
-        temp_profile_dir = tempfile.mkdtemp(prefix="firefox_automation_")
-        profile = FirefoxProfile(temp_profile_dir)
-
-        # Set basic preferences for automation
-        profile.set_preference("browser.startup.homepage", "about:blank")
-        profile.set_preference("startup.homepage_welcome_url", "about:blank")
-        profile.set_preference("startup.homepage_welcome_url.additional", "about:blank")
-        profile.set_preference("browser.download.folderList", 2)
-        profile.set_preference("browser.download.manager.showWhenStarting", False)
-        profile.set_preference("browser.download.dir", "/tmp")
-        profile.set_preference(
+        # Set preferences directly on options (Selenium 4.x style)
+        firefox_options.set_preference("browser.startup.homepage", "about:blank")
+        firefox_options.set_preference("startup.homepage_welcome_url", "about:blank")
+        firefox_options.set_preference("startup.homepage_welcome_url.additional", "about:blank")
+        firefox_options.set_preference("browser.download.folderList", 2)
+        firefox_options.set_preference("browser.download.manager.showWhenStarting", False)
+        firefox_options.set_preference("browser.download.dir", "/tmp")
+        firefox_options.set_preference(
             "browser.helperApps.neverAsk.saveToDisk", "application/pdf"
         )
 
         # Auto-install GeckoDriver
         service = webdriver.firefox.service.Service(GeckoDriverManager().install())
-        driver = webdriver.Firefox(
-            service=service, options=firefox_options, firefox_profile=profile
-        )
+        driver = webdriver.Firefox(service=service, options=firefox_options)
 
         return driver
 
@@ -101,7 +99,8 @@ class BrowserManagerService(IBrowserManager):
         options = self._get_chrome_options()
 
         if self.use_undetected:
-            return uc.Chrome(options=options)
+            # Use explicit version if provided, otherwise auto-detect
+            return uc.Chrome(options=options, version_main=self.chrome_version)
         else:
             service = Service(ChromeDriverManager().install())
             return webdriver.Chrome(service=service, options=options)

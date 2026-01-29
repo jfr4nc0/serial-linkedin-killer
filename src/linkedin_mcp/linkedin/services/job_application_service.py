@@ -1,6 +1,7 @@
 import uuid
 from typing import Dict, List
 
+from src.config.config_loader import load_config
 from src.linkedin_mcp.linkedin.agents.easy_apply_agent import EasyApplyAgent
 from src.linkedin_mcp.linkedin.graphs.job_application_graph import JobApplicationGraph
 from src.linkedin_mcp.linkedin.interfaces.services import IJobApplicationService
@@ -20,9 +21,16 @@ from src.linkedin_mcp.linkedin.utils.logging_config import get_mcp_logger
 class JobApplicationService(IJobApplicationService):
     """Service responsible for orchestrating complete LinkedIn job application workflow."""
 
-    def __init__(self, browser_type: str = "chrome"):
-        # Create concrete implementations
-        self.browser_manager = BrowserManager(browser_type=browser_type)
+    def __init__(self, config_path: str = None):
+        self.config = load_config(config_path)
+        # Create concrete implementations with config
+        self.browser_manager = BrowserManager(
+            headless=self.config.browser.headless,
+            use_undetected=self.config.browser.use_undetected,
+            browser_type=self.config.browser.browser_type,
+            chrome_version=self.config.browser.chrome_version,
+            chrome_binary_path=self.config.browser.chrome_binary_path,
+        )
         self.job_application_agent = EasyApplyAgent()
 
         # Inject dependencies into the graph

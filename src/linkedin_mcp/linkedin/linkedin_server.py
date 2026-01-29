@@ -273,12 +273,17 @@ log_mcp_tool_registration(
 if __name__ == "__main__":
     import argparse
 
-    import uvicorn
+    from src.config.config_loader import load_config
+
+    # Load config from YAML
+    config = load_config()
+    default_host = os.getenv("MCP_SERVER_HOST", config.mcp_server.host)
+    default_port = int(os.getenv("MCP_SERVER_PORT", str(config.mcp_server.port)))
 
     parser = argparse.ArgumentParser(description="LinkedIn MCP Server")
     parser.add_argument("--http", action="store_true", help="Run as HTTP server")
-    parser.add_argument("--host", default="localhost", help="HTTP server host")
-    parser.add_argument("--port", type=int, default=8000, help="HTTP server port")
+    parser.add_argument("--host", default=default_host, help="HTTP server host")
+    parser.add_argument("--port", type=int, default=default_port, help="HTTP server port")
     args = parser.parse_args()
 
     if args.http:

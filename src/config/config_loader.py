@@ -29,6 +29,8 @@ class BrowserConfig(BaseModel):
     headless: bool = False
     use_undetected: bool = True
     browser_type: str = "chrome"
+    chrome_version: Optional[int] = None  # Force specific ChromeDriver version
+    chrome_binary_path: Optional[str] = None  # Path to Chrome binary
 
 
 class OutreachFilters(BaseModel):

@@ -1,1 +1,2 @@
-sector numbers: 11,16,69,70
+sector numbers: 16
+country: 9
