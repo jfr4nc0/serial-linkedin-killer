@@ -45,6 +45,11 @@ def configure_core_agent_logging(
         "trace_id={extra[trace_id]} - <level>{message}</level>"
     )
 
+    # Ensure trace_id is always present in extra
+    logger.configure(
+        patcher=lambda record: record["extra"].setdefault("trace_id", "no-trace")
+    )
+
     # Add console handler
     logger.add(
         sys.stderr,

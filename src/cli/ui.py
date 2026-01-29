@@ -432,7 +432,9 @@ class TerminalUI:
 
         return selected
 
-    def print_filtered_companies_summary(self, companies: List[Dict[str, Any]], total: int):
+    def print_filtered_companies_summary(
+        self, companies: List[Dict[str, Any]], total: int
+    ):
         """Print summary of filtered companies."""
         self.console.print(
             f"\nFiltered to [bold green]{len(companies)}[/bold green] companies "
@@ -567,6 +569,7 @@ class TerminalUI:
         # Check if it's a file path
         if text.startswith("/") or text.startswith("./"):
             from pathlib import Path
+
             path = Path(text.strip())
             if path.exists():
                 return path.read_text(encoding="utf-8")

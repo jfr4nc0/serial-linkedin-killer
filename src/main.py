@@ -8,7 +8,11 @@ import os
 import sys
 from typing import List
 
+from dotenv import load_dotenv
+
 from src import JobApplicationAgent, JobSearchRequest
+
+load_dotenv(override=True)
 
 
 def main():

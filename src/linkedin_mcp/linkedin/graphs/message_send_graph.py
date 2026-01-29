@@ -10,7 +10,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.linkedin_mcp.linkedin.interfaces.services import IBrowserManager
-from src.linkedin_mcp.linkedin.model.outreach_types import MessageResult, MessageSendState
+from src.linkedin_mcp.linkedin.model.outreach_types import (
+    MessageResult,
+    MessageSendState,
+)
 
 
 class MessageSendGraph:
@@ -54,7 +57,9 @@ class MessageSendGraph:
 
             # Wait for profile to load
             WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".pv-top-card, .scaffold-layout"))
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, ".pv-top-card, .scaffold-layout")
+                )
             )
 
             return state
@@ -73,8 +78,7 @@ class MessageSendGraph:
             # Check for Message button
             try:
                 driver.find_element(
-                    By.XPATH,
-                    "//button[contains(@aria-label, 'Message')]"
+                    By.XPATH, "//button[contains(@aria-label, 'Message')]"
                 )
                 return {**state, "method": "direct_message"}
             except NoSuchElementException:
@@ -84,7 +88,7 @@ class MessageSendGraph:
             try:
                 driver.find_element(
                     By.XPATH,
-                    "//button[contains(@aria-label, 'Connect') or contains(@aria-label, 'connect')]"
+                    "//button[contains(@aria-label, 'Connect') or contains(@aria-label, 'connect')]",
                 )
                 return {**state, "method": "connection_request"}
             except NoSuchElementException:
@@ -93,15 +97,14 @@ class MessageSendGraph:
             # Check More button dropdown for Connect
             try:
                 more_button = driver.find_element(
-                    By.XPATH,
-                    "//button[contains(@aria-label, 'More actions')]"
+                    By.XPATH, "//button[contains(@aria-label, 'More actions')]"
                 )
                 more_button.click()
                 state["browser_manager"].random_delay(0.5, 1)
 
                 driver.find_element(
                     By.XPATH,
-                    "//span[text()='Connect']/ancestor::button | //div[contains(@class, 'artdeco-dropdown__item')][.//span[text()='Connect']]"
+                    "//span[text()='Connect']/ancestor::button | //div[contains(@class, 'artdeco-dropdown__item')][.//span[text()='Connect']]",
                 )
                 return {**state, "method": "connection_request"}
             except NoSuchElementException:
@@ -123,8 +126,7 @@ class MessageSendGraph:
 
             # Click Message button
             msg_button = driver.find_element(
-                By.XPATH,
-                "//button[contains(@aria-label, 'Message')]"
+                By.XPATH, "//button[contains(@aria-label, 'Message')]"
             )
             msg_button.click()
             state["browser_manager"].random_delay(1, 2)
@@ -138,8 +140,7 @@ class MessageSendGraph:
 
             # Type message
             text_box = driver.find_element(
-                By.CSS_SELECTOR,
-                ".msg-form__contenteditable, div[role='textbox']"
+                By.CSS_SELECTOR, ".msg-form__contenteditable, div[role='textbox']"
             )
             text_box.click()
             state["browser_manager"].random_delay(0.3, 0.5)
@@ -148,8 +149,7 @@ class MessageSendGraph:
 
             # Click send
             send_button = driver.find_element(
-                By.CSS_SELECTOR,
-                "button.msg-form__send-button, button[type='submit']"
+                By.CSS_SELECTOR, "button.msg-form__send-button, button[type='submit']"
             )
             send_button.click()
             state["browser_manager"].random_delay(1, 2)
@@ -157,7 +157,11 @@ class MessageSendGraph:
             return {**state, "sent": True, "method": "direct_message"}
 
         except Exception as e:
-            return {**state, "sent": False, "error": f"Failed to send message: {str(e)}"}
+            return {
+                **state,
+                "sent": False,
+                "error": f"Failed to send message: {str(e)}",
+            }
 
     def _send_connection_request(self, state: MessageSendState) -> Dict[str, Any]:
         try:
@@ -167,14 +171,14 @@ class MessageSendGraph:
             try:
                 connect_button = driver.find_element(
                     By.XPATH,
-                    "//button[contains(@aria-label, 'Connect') or contains(@aria-label, 'connect')]"
+                    "//button[contains(@aria-label, 'Connect') or contains(@aria-label, 'connect')]",
                 )
                 connect_button.click()
             except NoSuchElementException:
                 # Try from dropdown (already open from detect_action)
                 connect_item = driver.find_element(
                     By.XPATH,
-                    "//span[text()='Connect']/ancestor::button | //div[contains(@class, 'artdeco-dropdown__item')][.//span[text()='Connect']]"
+                    "//span[text()='Connect']/ancestor::button | //div[contains(@class, 'artdeco-dropdown__item')][.//span[text()='Connect']]",
                 )
                 connect_item.click()
 
@@ -183,8 +187,7 @@ class MessageSendGraph:
             # Click "Add a note" button
             try:
                 add_note_button = driver.find_element(
-                    By.XPATH,
-                    "//button[contains(@aria-label, 'Add a note')]"
+                    By.XPATH, "//button[contains(@aria-label, 'Add a note')]"
                 )
                 add_note_button.click()
                 state["browser_manager"].random_delay(0.5, 1)
@@ -192,8 +195,7 @@ class MessageSendGraph:
                 # Type note (300 char limit for connection requests)
                 note_text = state["message_text"][:300]
                 note_field = driver.find_element(
-                    By.CSS_SELECTOR,
-                    "textarea[name='message'], textarea#custom-message"
+                    By.CSS_SELECTOR, "textarea[name='message'], textarea#custom-message"
                 )
                 note_field.send_keys(note_text)
                 state["browser_manager"].random_delay(0.5, 1)
@@ -201,7 +203,7 @@ class MessageSendGraph:
                 # Click Send
                 send_button = driver.find_element(
                     By.XPATH,
-                    "//button[contains(@aria-label, 'Send') or @aria-label='Send now']"
+                    "//button[contains(@aria-label, 'Send') or @aria-label='Send now']",
                 )
                 send_button.click()
 
@@ -210,7 +212,7 @@ class MessageSendGraph:
                 try:
                     send_button = driver.find_element(
                         By.XPATH,
-                        "//button[contains(@aria-label, 'Send') or @aria-label='Send now']"
+                        "//button[contains(@aria-label, 'Send') or @aria-label='Send now']",
                     )
                     send_button.click()
                 except NoSuchElementException:
@@ -221,7 +223,11 @@ class MessageSendGraph:
             return {**state, "sent": True, "method": "connection_request"}
 
         except Exception as e:
-            return {**state, "sent": False, "error": f"Failed to send connection request: {str(e)}"}
+            return {
+                **state,
+                "sent": False,
+                "error": f"Failed to send connection request: {str(e)}",
+            }
 
     def execute(
         self,

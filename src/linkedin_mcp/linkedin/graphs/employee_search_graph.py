@@ -9,7 +9,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.linkedin_mcp.linkedin.interfaces.services import IBrowserManager
-from src.linkedin_mcp.linkedin.model.outreach_types import EmployeeResult, EmployeeSearchState
+from src.linkedin_mcp.linkedin.model.outreach_types import (
+    EmployeeResult,
+    EmployeeSearchState,
+)
 
 
 class EmployeeSearchGraph:
@@ -46,7 +49,11 @@ class EmployeeSearchGraph:
         try:
             url = state["company_linkedin_url"].rstrip("/")
             if not url.startswith("https://"):
-                url = f"https://www.{url}" if not url.startswith("www.") else f"https://{url}"
+                url = (
+                    f"https://www.{url}"
+                    if not url.startswith("www.")
+                    else f"https://{url}"
+                )
 
             people_url = f"{url}/people/"
             state["browser_manager"].driver.get(people_url)
@@ -57,7 +64,8 @@ class EmployeeSearchGraph:
         except Exception as e:
             return {
                 **state,
-                "errors": state["errors"] + [f"Failed to navigate to people page: {str(e)}"],
+                "errors": state["errors"]
+                + [f"Failed to navigate to people page: {str(e)}"],
             }
 
     def _extract_employees(self, state: EmployeeSearchState) -> Dict[str, Any]:
@@ -70,7 +78,10 @@ class EmployeeSearchGraph:
             try:
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, ".org-people-profile-card, .artdeco-list__item")
+                        (
+                            By.CSS_SELECTOR,
+                            ".org-people-profile-card, .artdeco-list__item",
+                        )
                     )
                 )
             except Exception:
@@ -85,7 +96,10 @@ class EmployeeSearchGraph:
             )
 
             for card in cards:
-                if len(state["collected_employees"]) + len(page_employees) >= state["limit"]:
+                if (
+                    len(state["collected_employees"]) + len(page_employees)
+                    >= state["limit"]
+                ):
                     break
 
                 try:
@@ -189,7 +203,8 @@ class EmployeeSearchGraph:
         except Exception as e:
             return {
                 **state,
-                "errors": state["errors"] + [f"Failed to navigate to next page: {str(e)}"],
+                "errors": state["errors"]
+                + [f"Failed to navigate to next page: {str(e)}"],
             }
 
     def execute(

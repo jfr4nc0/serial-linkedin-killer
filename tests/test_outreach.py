@@ -8,9 +8,13 @@ import pandas as pd
 import pytest
 
 from src.config.config_loader import AgentConfig, load_config
-from src.core.tools.company_loader import filter_companies, get_unique_values, load_companies
+from src.core.tools.company_db import CompanyDB
+from src.core.tools.company_loader import (
+    filter_companies,
+    get_unique_values,
+    load_companies,
+)
 from src.core.tools.message_template import render_template
-
 
 # --- Company Loader Tests ---
 
@@ -34,8 +38,16 @@ def test_load_companies(sample_csv):
     df = load_companies(sample_csv)
     assert len(df) == 5
     assert list(df.columns) == [
-        "country", "founded", "id", "industry", "linkedin_url",
-        "locality", "name", "region", "size", "website",
+        "country",
+        "founded",
+        "id",
+        "industry",
+        "linkedin_url",
+        "locality",
+        "name",
+        "region",
+        "size",
+        "website",
     ]
 
 
@@ -69,10 +81,13 @@ def test_filter_by_industry(sample_csv):
 
 def test_filter_by_multiple_columns(sample_csv):
     df = load_companies(sample_csv)
-    filtered = filter_companies(df, {
-        "country": ["germany"],
-        "industry": ["software"],
-    })
+    filtered = filter_companies(
+        df,
+        {
+            "country": ["germany"],
+            "industry": ["software"],
+        },
+    )
     assert len(filtered) == 1
     assert filtered.iloc[0]["name"] == "devhaus ag"
 
@@ -94,10 +109,13 @@ def test_filter_case_insensitive(sample_csv):
 
 def test_render_template_basic():
     template = "Hi {employee_name}, I work at {company_name}."
-    result = render_template(template, {
-        "employee_name": "Alice",
-        "company_name": "Acme",
-    })
+    result = render_template(
+        template,
+        {
+            "employee_name": "Alice",
+            "company_name": "Acme",
+        },
+    )
     assert result == "Hi Alice, I work at Acme."
 
 
@@ -109,12 +127,15 @@ def test_render_template_missing_variable():
 
 def test_render_template_static_and_dynamic():
     template = "Hi {employee_name}, I'm {my_name}, a {my_role} at {company_name}."
-    result = render_template(template, {
-        "employee_name": "Carol",
-        "company_name": "TechCo",
-        "my_name": "Dan",
-        "my_role": "Engineer",
-    })
+    result = render_template(
+        template,
+        {
+            "employee_name": "Carol",
+            "company_name": "TechCo",
+            "my_name": "Dan",
+            "my_role": "Engineer",
+        },
+    )
     assert result == "Hi Carol, I'm Dan, a Engineer at TechCo."
 
 
@@ -162,3 +183,63 @@ linkedin:
 
     config = load_config(str(config_file))
     assert config.linkedin.email == "from_env@test.com"
+
+
+# --- CompanyDB Tests ---
+
+
+@pytest.fixture
+def company_db(sample_csv):
+    """Create a CompanyDB with in-memory SQLite imported from sample CSV."""
+    db = CompanyDB(":memory:")
+    db.import_csv(sample_csv)
+    yield db
+    db.close()
+
+
+def test_db_import_count(company_db):
+    assert company_db.get_total_count() == 5
+
+
+def test_db_unique_values(company_db):
+    countries = company_db.get_unique_values("country")
+    assert "germany" in countries
+    assert "united states" in countries
+    assert "romania" in countries
+    assert len(countries) == 3
+
+    industries = company_db.get_unique_values("industry")
+    assert "software" in industries
+    assert len(industries) == 3
+
+
+def test_db_filter_by_country(company_db):
+    results = company_db.filter_companies({"country": ["germany"]})
+    assert len(results) == 2
+    assert all(r["country"] == "germany" for r in results)
+
+
+def test_db_filter_by_industry(company_db):
+    results = company_db.filter_companies({"industry": ["software"]})
+    assert len(results) == 3
+
+
+def test_db_filter_multiple_columns(company_db):
+    results = company_db.filter_companies(
+        {
+            "country": ["germany"],
+            "industry": ["software"],
+        }
+    )
+    assert len(results) == 1
+    assert results[0]["name"] == "devhaus ag"
+
+
+def test_db_filter_empty_means_all(company_db):
+    results = company_db.filter_companies({"country": []})
+    assert len(results) == 5
+
+
+def test_db_filter_case_insensitive(company_db):
+    results = company_db.filter_companies({"country": ["GERMANY"]})
+    assert len(results) == 2

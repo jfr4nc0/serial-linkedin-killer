@@ -8,20 +8,18 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import httpx
 import typer
 from dotenv import load_dotenv
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 
-from cli.config import CLIConfig, JobSearchConfig
-from cli.ui import TerminalUI
-from src.core.agent import JobApplicationAgent
+from src.cli.config import CLIConfig, JobSearchConfig
+from src.cli.ui import TerminalUI
 from src.core.utils.logging_config import (
     configure_core_agent_logging,
     get_core_agent_logger,
-    log_core_agent_completion,
-    log_core_agent_startup,
 )
 
 
@@ -29,23 +27,38 @@ class JobApplicationCLI:
     """Command-line interface for the LinkedIn Job Application Agent."""
 
     def __init__(self):
-        # Load .env file if it exists
         load_dotenv()
-
-        # Configure core agent logging
         configure_core_agent_logging()
 
         self.app = typer.Typer(
             name="job-applier",
             help="LinkedIn Job Application Agent - Automated job search and application system",
             no_args_is_help=True,
-            rich_markup_mode=None,  # Disable rich formatting
+            rich_markup_mode=None,
         )
         self.ui = None
         self.config = None
 
-        # Register commands
         self._register_commands()
+
+    def _get_api_base_url(self) -> str:
+        """Get the core-agent API base URL from config."""
+        from src.config.config_loader import load_config
+
+        config = load_config()
+        host = os.getenv("CORE_AGENT_HOST", config.api.host)
+        port = os.getenv("CORE_AGENT_PORT", str(config.api.port))
+        # For CLI connecting from outside Docker, default to localhost
+        if host == "0.0.0.0":
+            host = "localhost"
+        return f"http://{host}:{port}"
+
+    def _get_kafka_servers(self) -> str:
+        """Get Kafka bootstrap servers from config."""
+        from src.config.config_loader import load_config
+
+        config = load_config()
+        return os.getenv("KAFKA_BOOTSTRAP_SERVERS", config.kafka.bootstrap_servers)
 
     def _register_commands(self):
         """Register all CLI commands."""
@@ -69,8 +82,8 @@ class JobApplicationCLI:
 
         @self.app.command("test-connection")
         def test_connection():
-            """Test connection to MCP server."""
-            self._test_connection_command("localhost", 3000)
+            """Test connection to the core-agent API."""
+            self._test_connection_command()
 
         @self.app.command("outreach")
         def outreach(
@@ -78,16 +91,53 @@ class JobApplicationCLI:
                 "", "--config", "-c", help="Path to agent config YAML"
             ),
             interactive: bool = typer.Option(
-                True, help="Interactive mode"
+                True, "--interactive/--no-interactive", help="Interactive mode"
             ),
-            warm_up: bool = typer.Option(
-                False, help="Warm-up mode: cap at 10 messages"
+            warmup: bool = typer.Option(
+                False, "--warmup", is_flag=True, help="Warm-up mode: cap at 10 messages"
             ),
         ):
             """Run the employee outreach workflow."""
-            self._run_outreach_command(
-                config_file or None, interactive, warm_up
+            self._run_outreach_command(config_file or None, interactive, warmup)
+
+        @self.app.command("import-dataset")
+        def import_dataset(
+            csv_path: str = typer.Option(
+                "", "--csv", help="Path to CSV file (default from config)"
+            ),
+            db_path: str = typer.Option(
+                "", "--db", help="Path to SQLite DB (default from config)"
+            ),
+        ):
+            """Import company CSV dataset into SQLite for fast querying."""
+            self._import_dataset_command(csv_path or None, db_path or None)
+
+    def _import_dataset_command(self, csv_path: Optional[str], db_path: Optional[str]):
+        """Import the company CSV into SQLite."""
+        from src.config.config_loader import load_config
+        from src.core.tools.company_db import CompanyDB
+
+        self.ui = TerminalUI("rich")
+        config = load_config()
+
+        csv_path = csv_path or config.outreach.dataset_path
+        db_path = db_path or config.outreach.db_path
+
+        self.ui.console.print(
+            f"Importing [bold]{csv_path}[/bold] into [bold]{db_path}[/bold]..."
+        )
+
+        db = CompanyDB(db_path)
+        try:
+            total = db.import_csv(
+                csv_path,
+                on_progress=lambda n: self.ui.console.print(
+                    f"  {n:,} rows imported...", end="\r"
+                ),
             )
+            self.ui.console.print(f"\nImport complete: {total:,} rows", style="green")
+        finally:
+            db.close()
 
     def _run_workflow_command(
         self,
@@ -101,9 +151,8 @@ class JobApplicationCLI:
         save_results: bool,
         interactive: bool,
     ):
-        """Execute the run workflow command."""
+        """Execute the run workflow command via API + Kafka."""
         try:
-            # Initialize UI
             self.ui = TerminalUI(output_format)
             self.ui.print_header()
             self.ui.start_timer()
@@ -120,37 +169,85 @@ class JobApplicationCLI:
                 save_results,
             )
 
-            # Always ask for job searches if none are configured
             if not self.config.job_searches:
                 self._interactive_job_search_setup()
 
-            # Validate configuration
             missing_fields = self.config.validate_required_fields()
             if missing_fields:
                 self.ui.console.print(
-                    f"❌ Missing required configuration: {', '.join(missing_fields)}",
+                    f"Missing required configuration: {', '.join(missing_fields)}",
                     style="red",
-                )
-                self.ui.console.print(
-                    "Use 'job-applier init' to create a configuration file or set environment variables."
                 )
                 sys.exit(1)
 
-            # Show configuration summary
             self.ui.print_config_summary(self.config)
             self.ui.print_job_searches(self.config.job_searches)
 
-            # Setup logging
-            self._setup_logging()
+            # Build API request
+            job_searches = [
+                {
+                    "job_title": s.job_title,
+                    "location": s.location,
+                    "monthly_salary": s.monthly_salary,
+                    "limit": s.limit,
+                }
+                for s in self.config.job_searches
+            ]
 
-            # Run the workflow
-            self._execute_workflow()
+            payload = {
+                "job_searches": job_searches,
+                "credentials": {
+                    "email": self.config.linkedin_email,
+                    "password": self.config.linkedin_password,
+                },
+                "cv_data_path": self.config.cv_file_path or "./data/cv_data.json",
+            }
+
+            # Submit to API
+            base_url = self._get_api_base_url()
+            self.ui.console.print(f"Submitting to {base_url}/api/jobs/apply...")
+
+            with httpx.Client(timeout=30) as client:
+                resp = client.post(f"{base_url}/api/jobs/apply", json=payload)
+                resp.raise_for_status()
+                task_id = resp.json()["task_id"]
+
+            self.ui.console.print(f"Task submitted: {task_id}\n", style="green")
+
+            # Consume results from Kafka
+            from rich.live import Live
+            from rich.spinner import Spinner
+            from rich.text import Text
+
+            from src.core.api.schemas.job_schemas import JobApplyResponse
+            from src.core.kafka.consumer import KafkaResultConsumer
+            from src.core.kafka.producer import TOPIC_JOB_RESULTS
+
+            consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
+
+            with Live(
+                Spinner("dots", text="Waiting for results..."),
+                console=self.ui.console,
+            ) as live:
+                result = consumer.consume(
+                    TOPIC_JOB_RESULTS, task_id, JobApplyResponse, timeout=600.0
+                )
+                live.update(Text("Workflow completed!", style="bold green"))
+
+            if result is None:
+                self.ui.console.print("Timed out waiting for results.", style="red")
+                sys.exit(1)
+
+            # Display results
+            final_state = result.model_dump()
+            self._handle_workflow_results(final_state)
 
         except KeyboardInterrupt:
-            self.ui.console.print("\\n❌ Workflow interrupted by user", style="red")
+            self.ui.console.print("\nWorkflow interrupted by user", style="red")
             sys.exit(1)
         except Exception as e:
-            self.ui.console.print(f"❌ Workflow failed: {str(e)}", style="red")
+            if self.ui:
+                self.ui.console.print(f"Workflow failed: {str(e)}", style="red")
             logger.exception("Workflow execution failed")
             sys.exit(1)
 
@@ -161,25 +258,21 @@ class JobApplicationCLI:
         if not config_file:
             config_file = CLIConfig().get_default_config_path()
 
-        # Check if config file already exists
         if os.path.exists(config_file):
             overwrite = typer.confirm(
                 f"Configuration file {config_file} already exists. Overwrite?"
             )
             if not overwrite:
-                self.ui.console.print("❌ Configuration initialization cancelled")
+                self.ui.console.print("Configuration initialization cancelled")
                 return
 
-        # Create new configuration
         if interactive:
             config = self._create_interactive_config()
         else:
             config = self._create_default_config()
 
-        # Save configuration
         config.save_to_file(config_file)
-        self.ui.console.print(f"✅ Configuration saved to {config_file}", style="green")
-        self.ui.console.print("Edit the file to customize your job search criteria.")
+        self.ui.console.print(f"Configuration saved to {config_file}", style="green")
 
     def _validate_config_command(self, config_file: Optional[str]):
         """Execute the validate config command."""
@@ -190,41 +283,37 @@ class JobApplicationCLI:
 
         try:
             config = CLIConfig.load_from_file(config_file)
-            # Merge with environment variables
             config = config.merge_with_env()
             missing_fields = config.validate_required_fields()
 
             if missing_fields:
-                self.ui.console.print(
-                    f"❌ Configuration validation failed:", style="red"
-                )
+                self.ui.console.print("Configuration validation failed:", style="red")
                 for field in missing_fields:
                     self.ui.console.print(f"  - Missing: {field}", style="red")
             else:
-                self.ui.console.print("✅ Configuration is valid", style="green")
+                self.ui.console.print("Configuration is valid", style="green")
                 self.ui.print_config_summary(config)
 
         except Exception as e:
             self.ui.console.print(
-                f"❌ Configuration validation failed: {str(e)}", style="red"
+                f"Configuration validation failed: {str(e)}", style="red"
             )
 
-    def _test_connection_command(self, mcp_host: str, mcp_port: int):
-        """Execute the test connection command."""
+    def _test_connection_command(self):
+        """Test connection to the core-agent API."""
         self.ui = TerminalUI("rich")
+        base_url = self._get_api_base_url()
 
-        self.ui.console.print(
-            f"Testing connection to MCP server at {mcp_host}:{mcp_port}..."
-        )
+        self.ui.console.print(f"Testing connection to {base_url}...")
 
         try:
-            # Try to create agent and test connection
-            agent = JobApplicationAgent(server_host=mcp_host, server_port=mcp_port)
-            self.ui.console.print("✅ Connection successful", style="green")
-
+            with httpx.Client(timeout=5) as client:
+                resp = client.get(f"{base_url}/health")
+                resp.raise_for_status()
+            self.ui.console.print("Connection successful", style="green")
         except Exception as e:
-            self.ui.console.print(f"❌ Connection failed: {str(e)}", style="red")
-            self.ui.console.print("Make sure the MCP server is running and accessible.")
+            self.ui.console.print(f"Connection failed: {str(e)}", style="red")
+            self.ui.console.print("Make sure the core-agent API is running.")
 
     def _load_configuration(
         self,
@@ -238,8 +327,6 @@ class JobApplicationCLI:
         save_results: bool,
     ) -> CLIConfig:
         """Load and merge configuration from various sources."""
-
-        # Start with defaults
         config = CLIConfig(
             mcp_server_host=mcp_host,
             mcp_server_port=mcp_port,
@@ -247,16 +334,13 @@ class JobApplicationCLI:
             save_results=save_results if save_results is not None else True,
         )
 
-        # Load from config file if provided, or try to find default
         if not config_file:
-            # Try to find a default config file
             default_config = CLIConfig().get_default_config_path()
             if os.path.exists(default_config):
                 config_file = default_config
 
         if config_file and os.path.exists(config_file):
             file_config = CLIConfig.load_from_file(config_file)
-            # Merge file config with defaults
             config = file_config.copy(
                 update={
                     "mcp_server_host": mcp_host,
@@ -267,14 +351,12 @@ class JobApplicationCLI:
             )
         elif config_file:
             self.ui.console.print(
-                f"⚠️  Configuration file {config_file} not found, using defaults",
+                f"Configuration file {config_file} not found, using defaults",
                 style="yellow",
             )
 
-        # Override with environment variables
         config = config.merge_with_env()
 
-        # Override with command line arguments
         if linkedin_email:
             config.linkedin_email = linkedin_email
         if linkedin_password:
@@ -286,7 +368,7 @@ class JobApplicationCLI:
 
     def _interactive_job_search_setup(self):
         """Interactive setup for job search criteria."""
-        self.ui.console.print("🔧 Interactive Job Search Setup", style="bold blue")
+        self.ui.console.print("Interactive Job Search Setup", style="bold blue")
 
         job_searches = []
         while True:
@@ -310,20 +392,20 @@ class JobApplicationCLI:
                 job_searches.append(job_search)
 
                 self.ui.console.print(
-                    f"✅ Added job search: {job_title} in {location}", style="green"
+                    f"Added job search: {job_title} in {location}", style="green"
                 )
 
                 if not typer.confirm("Add another job search?"):
                     break
 
             except ValueError as e:
-                self.ui.console.print(f"❌ Invalid input: {str(e)}", style="red")
+                self.ui.console.print(f"Invalid input: {str(e)}", style="red")
 
         self.config.job_searches = job_searches
 
     def _create_interactive_config(self) -> CLIConfig:
         """Create configuration interactively."""
-        self.ui.console.print("🔧 Interactive Configuration Setup", style="bold blue")
+        self.ui.console.print("Interactive Configuration Setup", style="bold blue")
 
         linkedin_email = self.ui.prompt_user_input("LinkedIn email")
         linkedin_password = self.ui.prompt_user_input("LinkedIn password")
@@ -337,7 +419,6 @@ class JobApplicationCLI:
             cv_file_path=cv_file_path,
         )
 
-        # Add job searches
         self.config = config
         self._interactive_job_search_setup()
 
@@ -362,162 +443,46 @@ class JobApplicationCLI:
             ]
         )
 
-    def _setup_logging(self):
-        """Setup logging configuration using core agent logging to maintain trace_id consistency."""
-        from src.core.utils.logging_config import configure_core_agent_logging
-
-        # Use core agent logging configuration which supports trace_id
-        configure_core_agent_logging(
-            log_level=self.config.log_level, log_file=self.config.log_file
-        )
-
-    def _execute_workflow(self):
-        """Execute the main job application workflow."""
-        try:
-            # Initialize the agent
-            agent = JobApplicationAgent(
-                server_host=self.config.mcp_server_host,
-                server_port=self.config.mcp_server_port,
-            )
-
-            # Prepare job search requests
-            job_search_requests = [
-                {
-                    "job_title": search.job_title,
-                    "location": search.location,
-                    "monthly_salary": search.monthly_salary,
-                    "limit": search.limit,
-                }
-                for search in self.config.job_searches
-            ]
-
-            # Prepare user credentials
-            user_credentials = {
-                "email": self.config.linkedin_email,
-                "password": self.config.linkedin_password,
-            }
-
-            # Use logger that will have trace_id after agent.run() configures it
-            # We'll bind a temporary trace_id for the initial log
-            import uuid
-
-            from src.core.utils.logging_config import get_core_agent_logger
-
-            temp_trace_id = str(uuid.uuid4())
-            logger = get_core_agent_logger(temp_trace_id)
-            logger.info("Starting job application workflow")
-
-            # Run the workflow with progress updates
-            if self.config.output_format == "rich":
-                self._run_workflow_with_progress(
-                    agent, job_search_requests, user_credentials
-                )
-            else:
-                final_state = agent.run(
-                    job_searches=job_search_requests,
-                    cv_file_path=self.config.cv_file_path,
-                    user_credentials=user_credentials,
-                )
-                self._handle_workflow_results(final_state)
-
-        except Exception as e:
-            import uuid
-
-            from src.core.utils.logging_config import get_core_agent_logger
-
-            temp_trace_id = str(uuid.uuid4())
-            logger = get_core_agent_logger(temp_trace_id)
-            logger.exception("Workflow execution failed")
-            raise
-
-    def _run_workflow_with_progress(self, agent, job_search_requests, user_credentials):
-        """Run workflow with rich progress display."""
-        from rich.live import Live
-        from rich.spinner import Spinner
-        from rich.text import Text
-
-        # This is a simplified version - in a real implementation,
-        # you'd want to modify the agent to provide progress callbacks
-        with Live(
-            Spinner("dots", text="Starting workflow..."), console=self.ui.console
-        ) as live:
-            final_state = agent.run(
-                job_searches=job_search_requests,
-                user_credentials=user_credentials,
-                cv_data_path=self.config.cv_file_path,  # Now expects CV JSON data path
-            )
-
-            live.update(Text("✅ Workflow completed!", style="bold green"))
-
-        self._handle_workflow_results(final_state)
-
     def _handle_workflow_results(self, final_state: Dict[str, Any]):
         """Handle and display workflow results."""
-        # Display CV analysis
         if final_state.get("cv_analysis"):
             self.ui.print_cv_analysis(final_state["cv_analysis"])
 
-        # Display job results
         if final_state.get("all_found_jobs"):
             self.ui.print_job_results(final_state["all_found_jobs"])
 
-        # Display application results
         if final_state.get("application_results"):
             self.ui.print_application_results(final_state["application_results"])
 
-        # Display errors
         if final_state.get("errors"):
             self.ui.print_errors(final_state["errors"])
 
-        # Display final summary
         self.ui.print_final_summary(final_state)
 
-        # Save results if configured
-        if self.config.save_results:
+        if self.config and self.config.save_results:
             self._save_results(final_state)
-
-        # Use trace_id-aware logger, getting trace_id from final_state
-        trace_id = final_state.get("trace_id", "unknown")
-        from src.core.utils.logging_config import get_core_agent_logger
-
-        logger_with_trace = get_core_agent_logger(trace_id)
-        logger_with_trace.info("Workflow completed successfully")
 
     def _save_results(self, final_state: Dict[str, Any]):
         """Save workflow results to file."""
-        # Initialize logger outside try block to ensure it's available in except
-        save_logger = None
         try:
-            # Use bound logger for save operations
-            save_logger = get_core_agent_logger("save-results")
-            # Create results directory
             results_dir = Path(self.config.results_directory)
             results_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate filename with timestamp
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             filename = f"job_application_results_{timestamp}.json"
             filepath = results_dir / filename
 
-            # Clean up state for JSON serialization
             clean_state = {
                 k: v for k, v in final_state.items() if k not in ["cv_content"]
             }
 
-            # Save to file
             with open(filepath, "w") as f:
                 json.dump(clean_state, f, indent=2, default=str)
 
-            self.ui.console.print(f"📁 Results saved to {filepath}", style="blue")
+            self.ui.console.print(f"Results saved to {filepath}", style="blue")
 
         except Exception as e:
-            if save_logger:
-                save_logger.warning(f"Failed to save results: {str(e)}")
-            else:
-                self.ui.console.print(f"❌ Failed to save results: {str(e)}", style="red")
-            self.ui.console.print(
-                f"⚠️  Failed to save results: {str(e)}", style="yellow"
-            )
+            self.ui.console.print(f"Failed to save results: {str(e)}", style="yellow")
 
     def _run_outreach_command(
         self,
@@ -525,22 +490,17 @@ class JobApplicationCLI:
         interactive: bool,
         warm_up: bool,
     ):
-        """Execute the outreach workflow command."""
-        from src.config.config_loader import load_config
-        from src.core.agents.outreach_agent import EmployeeOutreachAgent
-        from src.core.tools.company_loader import (
-            filter_companies,
-            get_unique_values,
-            load_companies,
-        )
+        """Execute the outreach workflow command via API + Kafka."""
         from src.core.tools.message_template import render_template
 
         try:
             self.ui = TerminalUI("rich")
             self.ui.start_timer()
 
-            # Load central config
+            from src.config.config_loader import load_config
+
             config = load_config(config_file)
+            base_url = self._get_api_base_url()
 
             self.ui.console.print(
                 Panel(
@@ -551,11 +511,14 @@ class JobApplicationCLI:
             )
             self.ui.console.print()
 
-            # Load company dataset
-            dataset_path = config.outreach.dataset_path
-            self.ui.console.print(f"Loading dataset from {dataset_path}...")
-            df = load_companies(dataset_path)
-            total_count = len(df)
+            # Fetch filter options from API
+            self.ui.console.print("Loading filter options from API...")
+            with httpx.Client(timeout=30) as client:
+                resp = client.get(f"{base_url}/api/outreach/filters")
+                resp.raise_for_status()
+                filter_data = resp.json()
+
+            total_count = filter_data["total_companies"]
             self.ui.console.print(
                 f"Loaded [bold green]{total_count}[/bold green] companies\n"
             )
@@ -563,28 +526,24 @@ class JobApplicationCLI:
             # Interactive filtering
             filters = {}
             if interactive:
-                # Industry filter
-                industries = get_unique_values(df, "industry")
+                industries = filter_data["industries"]
                 if industries:
                     selected = self.ui.print_company_filter_menu("industry", industries)
                     if selected:
                         filters["industry"] = selected
 
-                # Country filter
-                countries = get_unique_values(df, "country")
+                countries = filter_data["countries"]
                 if countries:
                     selected = self.ui.print_company_filter_menu("country", countries)
                     if selected:
                         filters["country"] = selected
 
-                # Size filter
-                sizes = get_unique_values(df, "size")
+                sizes = filter_data["sizes"]
                 if sizes:
                     selected = self.ui.print_company_filter_menu("size", sizes)
                     if selected:
                         filters["size"] = selected
             else:
-                # Use filters from config
                 if config.outreach.filters.industry:
                     filters["industry"] = config.outreach.filters.industry
                 if config.outreach.filters.country:
@@ -592,31 +551,17 @@ class JobApplicationCLI:
                 if config.outreach.filters.size:
                     filters["size"] = config.outreach.filters.size
 
-            # Apply filters
-            filtered_df = filter_companies(df, filters)
-            companies = filtered_df.to_dict("records")
-
-            # Show summary
-            self.ui.print_filtered_companies_summary(companies, total_count)
-
-            if not companies:
-                self.ui.console.print("No companies match the filters.", style="red")
-                return
-
-            # Confirm
-            if interactive and not typer.confirm("Proceed with these companies?"):
-                self.ui.console.print("Cancelled.", style="yellow")
-                return
-
             # Message template
             if interactive:
                 message_template = self.ui.prompt_message_template()
                 template_variables = self.ui.prompt_template_variables()
             else:
-                # Load from config
                 if config.outreach.message_template_path:
                     from src.core.tools.message_template import load_template
-                    message_template = load_template(config.outreach.message_template_path)
+
+                    message_template = load_template(
+                        config.outreach.message_template_path
+                    )
                 else:
                     message_template = config.outreach.message_template
                 template_variables = {}
@@ -629,7 +574,7 @@ class JobApplicationCLI:
             sample_vars = {
                 **template_variables,
                 "employee_name": "John Doe",
-                "company_name": companies[0].get("name", "Example Co"),
+                "company_name": "Example Co",
                 "employee_title": "Software Engineer",
             }
             preview = render_template(message_template, sample_vars)
@@ -652,33 +597,54 @@ class JobApplicationCLI:
                 )
                 return
 
-            user_credentials = {"email": email, "password": password}
+            # Submit to API
+            payload = {
+                "filters": filters,
+                "message_template": message_template,
+                "template_variables": template_variables,
+                "credentials": {"email": email, "password": password},
+                "warm_up": warm_up,
+            }
 
-            # Override daily limit for warm-up
+            self.ui.console.print(f"Submitting to {base_url}/api/outreach/run...")
+
+            with httpx.Client(timeout=30) as client:
+                resp = client.post(f"{base_url}/api/outreach/run", json=payload)
+                resp.raise_for_status()
+                task_id = resp.json()["task_id"]
+
+            self.ui.console.print(f"Task submitted: {task_id}\n", style="green")
+
             if warm_up:
-                config.outreach.daily_message_limit = 10
                 self.ui.console.print(
                     "Warm-up mode: limiting to 10 messages\n", style="yellow"
                 )
 
-            # Run the outreach agent
-            agent = EmployeeOutreachAgent(config_file)
-
+            # Consume results from Kafka
             from rich.live import Live
             from rich.spinner import Spinner
             from rich.text import Text
+
+            from src.core.api.schemas.outreach_schemas import OutreachRunResponse
+            from src.core.kafka.consumer import KafkaResultConsumer
+            from src.core.kafka.producer import TOPIC_OUTREACH_RESULTS
+
+            consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
 
             with Live(
                 Spinner("dots", text="Running outreach workflow..."),
                 console=self.ui.console,
             ) as live:
-                final_state = agent.run(
-                    companies=companies,
-                    message_template=message_template,
-                    template_variables=template_variables,
-                    user_credentials=user_credentials,
+                result = consumer.consume(
+                    TOPIC_OUTREACH_RESULTS, task_id, OutreachRunResponse, timeout=600.0
                 )
                 live.update(Text("Outreach workflow completed!", style="bold green"))
+
+            if result is None:
+                self.ui.console.print("Timed out waiting for results.", style="red")
+                sys.exit(1)
+
+            final_state = result.model_dump()
 
             # Display results
             if final_state.get("message_results"):
@@ -688,8 +654,6 @@ class JobApplicationCLI:
                 self.ui.print_errors(final_state["errors"])
 
             self.ui.print_outreach_summary(final_state)
-
-            # Save results
             self._save_results(final_state)
 
         except KeyboardInterrupt:

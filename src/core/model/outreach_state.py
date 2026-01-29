@@ -17,7 +17,9 @@ class OutreachAgentState(TypedDict):
 
     # Results
     employees_found: List[Dict[str, Any]]  # [{company_name, name, profile_url, title}]
-    message_results: List[Dict[str, Any]]  # [{employee_profile_url, sent, method, error}]
+    message_results: List[
+        Dict[str, Any]
+    ]  # [{employee_profile_url, sent, method, error}]
     errors: List[str]
 
     # Progress tracking

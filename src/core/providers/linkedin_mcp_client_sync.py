@@ -69,7 +69,12 @@ class LinkedInMCPClientSync:
         async def _send():
             async with self.client as client:
                 return await client.send_message(
-                    employee_profile_url, employee_name, message, email, password, trace_id
+                    employee_profile_url,
+                    employee_name,
+                    message,
+                    email,
+                    password,
+                    trace_id,
                 )
 
         return asyncio.run(_send())

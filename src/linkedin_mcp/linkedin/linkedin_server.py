@@ -7,15 +7,19 @@ import os
 
 from fastmcp import FastMCP
 
+from src.linkedin_mcp.linkedin.model.outreach_types import EmployeeResult, MessageResult
 from src.linkedin_mcp.linkedin.model.types import (
     ApplicationRequest,
     ApplicationResult,
     CVAnalysis,
     JobResult,
 )
-from src.linkedin_mcp.linkedin.model.outreach_types import EmployeeResult, MessageResult
-from src.linkedin_mcp.linkedin.services.employee_outreach_service import EmployeeOutreachService
-from src.linkedin_mcp.linkedin.services.job_application_service import JobApplicationService
+from src.linkedin_mcp.linkedin.services.employee_outreach_service import (
+    EmployeeOutreachService,
+)
+from src.linkedin_mcp.linkedin.services.job_application_service import (
+    JobApplicationService,
+)
 from src.linkedin_mcp.linkedin.services.job_search_service import JobSearchService
 from src.linkedin_mcp.linkedin.utils.logging_config import (
     configure_mcp_logging,

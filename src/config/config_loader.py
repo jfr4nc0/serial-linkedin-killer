@@ -39,6 +39,7 @@ class OutreachFilters(BaseModel):
 
 class OutreachConfig(BaseModel):
     dataset_path: str = "./data/free_company_dataset.csv"
+    db_path: str = "./data/companies.db"
     message_template_path: str = ""
     message_template: str = ""
     employees_per_company: int = 10
@@ -50,6 +51,15 @@ class OutreachConfig(BaseModel):
 
 class CVConfig(BaseModel):
     file_path: str = "./data/cv_data.json"
+
+
+class KafkaConfig(BaseModel):
+    bootstrap_servers: str = "localhost:9092"
+
+
+class APIConfig(BaseModel):
+    host: str = "0.0.0.0"
+    port: int = 8080
 
 
 class ObservabilityConfig(BaseModel):
@@ -64,6 +74,8 @@ class AgentConfig(BaseModel):
     browser: BrowserConfig = BrowserConfig()
     outreach: OutreachConfig = OutreachConfig()
     cv: CVConfig = CVConfig()
+    kafka: KafkaConfig = KafkaConfig()
+    api: APIConfig = APIConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
 
 
@@ -93,6 +105,9 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
         "mcp_server.port": os.getenv("MCP_SERVER_PORT"),
         "llm.base_url": os.getenv("LOCAL_LLM_BASE_URL"),
         "llm.api_key": os.getenv("LOCAL_LLM_API_KEY"),
+        "kafka.bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
+        "api.host": os.getenv("API_HOST"),
+        "api.port": os.getenv("API_PORT"),
         "observability.log_level": os.getenv("LOG_LEVEL"),
     }
 
@@ -104,7 +119,11 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
                 obj = getattr(obj, part)
             field = parts[-1]
             field_info = type(obj).model_fields[field]
-            cast_value = field_info.annotation(value) if field_info.annotation in (int, float, bool) else value
+            cast_value = (
+                field_info.annotation(value)
+                if field_info.annotation in (int, float, bool)
+                else value
+            )
             setattr(obj, field, cast_value)
 
     return config

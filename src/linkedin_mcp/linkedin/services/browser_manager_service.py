@@ -65,8 +65,9 @@ class BrowserManagerService(IBrowserManager):
     def _start_firefox(self) -> webdriver.Firefox:
         """Start Firefox as fallback when Chrome fails."""
         import tempfile
+
         from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
-        
+
         firefox_options = FirefoxOptions()
 
         if self.headless:
@@ -75,7 +76,7 @@ class BrowserManagerService(IBrowserManager):
         # Create a completely clean temporary profile
         temp_profile_dir = tempfile.mkdtemp(prefix="firefox_automation_")
         profile = FirefoxProfile(temp_profile_dir)
-        
+
         # Set basic preferences for automation
         profile.set_preference("browser.startup.homepage", "about:blank")
         profile.set_preference("startup.homepage_welcome_url", "about:blank")
@@ -83,11 +84,15 @@ class BrowserManagerService(IBrowserManager):
         profile.set_preference("browser.download.folderList", 2)
         profile.set_preference("browser.download.manager.showWhenStarting", False)
         profile.set_preference("browser.download.dir", "/tmp")
-        profile.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/pdf")
+        profile.set_preference(
+            "browser.helperApps.neverAsk.saveToDisk", "application/pdf"
+        )
 
         # Auto-install GeckoDriver
         service = webdriver.firefox.service.Service(GeckoDriverManager().install())
-        driver = webdriver.Firefox(service=service, options=firefox_options, firefox_profile=profile)
+        driver = webdriver.Firefox(
+            service=service, options=firefox_options, firefox_profile=profile
+        )
 
         return driver
 

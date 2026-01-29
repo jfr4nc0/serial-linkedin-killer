@@ -31,8 +31,8 @@ echo "Environment: MCP_SERVER_HOST=$MCP_SERVER_HOST, MCP_SERVER_PORT=$MCP_SERVER
 if [[ "${USE_UVICORN:-false}" == "true" ]]; then
     echo "Starting LinkedIn MCP Server via uvicorn..."
     # Note: Standard MCP uses TCP not HTTP, so this is just if there's a uvicorn adapter
-    exec python -m linkedin_mcp.linkedin.linkedin_server
+    exec python -m src.linkedin_mcp.linkedin.linkedin_server
 else
     echo "Starting LinkedIn MCP Server (TCP mode)..."
-    exec python -m linkedin_mcp.linkedin.linkedin_server
+    exec python -m src.linkedin_mcp.linkedin.linkedin_server
 fi

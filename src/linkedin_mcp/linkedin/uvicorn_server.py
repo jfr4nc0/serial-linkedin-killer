@@ -8,7 +8,9 @@ import os
 from fastmcp import FastMCP
 from mcp.server.http import HTTPServer
 
-from src.linkedin_mcp.linkedin.services.job_application_service import JobApplicationService
+from src.linkedin_mcp.linkedin.services.job_application_service import (
+    JobApplicationService,
+)
 from src.linkedin_mcp.linkedin.services.job_search_service import JobSearchService
 from src.linkedin_mcp.types import (
     ApplicationRequest,

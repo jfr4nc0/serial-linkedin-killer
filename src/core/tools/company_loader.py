@@ -7,7 +7,7 @@ import pandas as pd
 
 def load_companies(csv_path: str) -> pd.DataFrame:
     """Load company dataset from CSV into a DataFrame."""
-    return pd.read_csv(csv_path, dtype=str).fillna("")
+    return pd.read_csv(csv_path, dtype=str, on_bad_lines="skip").fillna("")
 
 
 def get_unique_values(df: pd.DataFrame, column: str) -> List[str]:

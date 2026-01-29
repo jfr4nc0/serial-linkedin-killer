@@ -79,7 +79,9 @@ class EmployeeOutreachAgent:
                     all_employees.extend(employees)
 
                 except Exception as e:
-                    error_msg = f"Failed to search employees at {company_name}: {str(e)}"
+                    error_msg = (
+                        f"Failed to search employees at {company_name}: {str(e)}"
+                    )
                     agent_logger.error(error_msg)
                     state["errors"] = state.get("errors", []) + [error_msg]
 
@@ -104,7 +106,9 @@ class EmployeeOutreachAgent:
 
         message_results = []
         messages_sent = state.get("messages_sent_today", 0)
-        daily_limit = state.get("daily_message_limit", self.config.outreach.daily_message_limit)
+        daily_limit = state.get(
+            "daily_message_limit", self.config.outreach.daily_message_limit
+        )
 
         try:
             mcp_client = LinkedInMCPClientSync()
@@ -146,13 +150,15 @@ class EmployeeOutreachAgent:
                 except Exception as e:
                     error_msg = f"Failed to send message to {employee.get('name', '')}: {str(e)}"
                     agent_logger.error(error_msg)
-                    message_results.append({
-                        "employee_profile_url": employee.get("profile_url", ""),
-                        "employee_name": employee.get("name", ""),
-                        "sent": False,
-                        "method": "",
-                        "error": str(e),
-                    })
+                    message_results.append(
+                        {
+                            "employee_profile_url": employee.get("profile_url", ""),
+                            "employee_name": employee.get("name", ""),
+                            "sent": False,
+                            "method": "",
+                            "error": str(e),
+                        }
+                    )
 
             successful = sum(1 for r in message_results if r.get("sent"))
 
@@ -192,6 +198,7 @@ class EmployeeOutreachAgent:
         trace_id = str(uuid.uuid4())
 
         from src.core.utils.logging_config import configure_core_agent_logging
+
         configure_core_agent_logging(default_trace_id=trace_id)
 
         agent_logger = get_core_agent_logger(trace_id)

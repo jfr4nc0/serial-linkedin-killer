@@ -4,6 +4,7 @@ import random
 import time
 from typing import Dict, List
 
+from src.config.config_loader import load_config
 from src.linkedin_mcp.linkedin.graphs.employee_search_graph import EmployeeSearchGraph
 from src.linkedin_mcp.linkedin.graphs.message_send_graph import MessageSendGraph
 from src.linkedin_mcp.linkedin.interfaces.services import IEmployeeOutreachService
@@ -13,8 +14,6 @@ from src.linkedin_mcp.linkedin.services.browser_manager_service import (
 )
 from src.linkedin_mcp.linkedin.services.linkedin_auth_service import LinkedInAuthService
 
-from src.config.config_loader import load_config
-
 
 class EmployeeOutreachService(IEmployeeOutreachService):
     """Orchestrates authentication, employee search, and message sending."""
@@ -22,7 +21,9 @@ class EmployeeOutreachService(IEmployeeOutreachService):
     def __init__(self, config_path: str = None):
         self.config = load_config(config_path)
         self.browser_manager = BrowserManager()
-        self.employee_search_graph = EmployeeSearchGraph(browser_manager=self.browser_manager)
+        self.employee_search_graph = EmployeeSearchGraph(
+            browser_manager=self.browser_manager
+        )
         self.message_send_graph = MessageSendGraph(browser_manager=self.browser_manager)
         self.auth_service = LinkedInAuthService()
 
