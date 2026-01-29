@@ -222,6 +222,7 @@ docker-compose logs -f core-agent
 
 ### 🎯 Command Overview
 - **`run`**: Execute the complete job application workflow
+- **`outreach`**: Run the employee outreach workflow (filter companies, find employees, send messages)
 - **`init`**: Create and configure a new configuration file
 - **`validate`**: Validate configuration files
 - **`test-connection`**: Test MCP server connectivity
@@ -264,11 +265,146 @@ python job_applier.py init --config ./my-config.yaml
 
 For detailed CLI usage, see [CLI_USAGE.md](CLI_USAGE.md).
 
+## Employee Outreach
+
+Automated LinkedIn employee outreach: filter companies from a dataset, find employees at each company, and send personalized messages or connection requests.
+
+### Quick Start
+
+```bash
+python job_applier.py outreach --interactive
+```
+
+### TUI Interactive Flow
+
+The `outreach` command walks you through each step:
+
+**1. Company Filtering**
+
+The TUI loads `data/free_company_dataset.csv` and presents filterable columns as numbered tables:
+
+```
+Available Industry values
+┌────┬─────────────────────────────┐
+│ #  │ Industry                    │
+├────┼─────────────────────────────┤
+│ 1  │ automotive                  │
+│ 2  │ hospital & health care      │
+│ 3  │ investment banking          │
+│ 4  │ software                    │
+│ ...│ ...                         │
+└────┴─────────────────────────────┘
+Select industry (comma-separated numbers, or 'all'): 4
+
+Available Country values
+┌────┬─────────────────┐
+│ #  │ Country         │
+├────┼─────────────────┤
+│ 1  │ germany         │
+│ 2  │ united states   │
+│ ...│ ...             │
+└────┴─────────────────┘
+Select country (comma-separated numbers, or 'all'): 1,2
+
+Available Size values
+┌────┬──────────┐
+│ #  │ Size     │
+├────┼──────────┤
+│ 1  │ 1-10     │
+│ 2  │ 11-50    │
+│ 3  │ 51-200   │
+│ 4  │ 201-500  │
+└────┴──────────┘
+Select size (comma-separated numbers, or 'all'): 3,4
+```
+
+After filtering, a summary table is shown for confirmation.
+
+**2. Message Template**
+
+Enter your message inline (end with an empty line) or provide a file path:
+
+```
+Enter message template. Use {employee_name}, {company_name},
+{employee_title}, {my_name}, {my_role} as placeholders.
+
+Hi {employee_name},
+
+I noticed you work at {company_name} as {employee_title}.
+I'm {my_name}, a {my_role}, and I'd love to connect
+regarding {topic}.
+
+{custom_closing}
+
+```
+
+The TUI then prompts for static variables (`my_name`, `my_role`, `topic`, `custom_closing`) and shows a rendered preview before confirming.
+
+**3. Execution**
+
+The agent iterates through each filtered company:
+- Navigates to `linkedin.com/company/<name>/people/`
+- Scrapes employee cards (name, title, profile URL)
+- For each employee, visits their profile and either:
+  - Sends a **direct message** (if Message button available)
+  - Sends a **connection request with note** (if Connect button available, message truncated to 300 chars)
+- Randomized delays between messages (30-120s, configurable)
+
+### Configuration
+
+All settings live in `config/agent.yaml`:
+
+```yaml
+outreach:
+  dataset_path: "./data/free_company_dataset.csv"
+  message_template_path: ""         # or path to .txt template file
+  message_template: ""              # or inline template
+  employees_per_company: 10
+  daily_message_limit: 50
+  delay_between_messages_min: 30.0
+  delay_between_messages_max: 120.0
+  filters:
+    industry: []     # pre-set filters (skip TUI selection)
+    country: []
+    size: []
+```
+
+### CLI Options
+
+```bash
+# Interactive mode (default) — TUI for filtering and template
+python job_applier.py outreach --interactive
+
+# Non-interactive — uses filters and template from config/agent.yaml
+python job_applier.py outreach --config config/agent.yaml --no-interactive
+
+# Warm-up mode — caps at 10 messages (for new accounts)
+python job_applier.py outreach --warm-up
+```
+
+### Dataset Columns
+
+The CSV at `data/free_company_dataset.csv` has these columns:
+
+| Column | Description | Example |
+|--------|-------------|---------|
+| `country` | Company country | `united states` |
+| `industry` | Business sector | `software` |
+| `size` | Employee range | `51-200` |
+| `linkedin_url` | Company LinkedIn URL | `linkedin.com/company/acme` |
+| `name` | Company name | `acme corp` |
+| `locality` | City | `san francisco` |
+| `region` | State/region | `california` |
+| `founded` | Year founded | `2010` |
+| `website` | Company website | `acme.com` |
+
 ## System Components
 
 ### MCP Tools
 - **`search_jobs`**: LinkedIn job search with Easy Apply filtering
 - **`easy_apply_for_jobs`**: AI-powered job application with form filling
+- **`search_employees`**: Find employees at a company via their LinkedIn company page
+- **`send_message`**: Send a direct message or connection request to a LinkedIn user
 
 ### Core Services
 - **`JobApplicationAgent`**: Main orchestration agent with LangGraph workflow

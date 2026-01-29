@@ -15,8 +15,8 @@ load_dotenv()
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from linkedin_mcp.linkedin.model.types import ApplicationRequest
-from linkedin_mcp.linkedin.services.job_application_service import JobApplicationService
+from src.linkedin_mcp.linkedin.model.types import ApplicationRequest
+from src.linkedin_mcp.linkedin.services.job_application_service import JobApplicationService
 
 
 def main():
@@ -44,7 +44,7 @@ def main():
     }
 
     # Initialize and run
-    service = JobApplicationService()
+    service = JobApplicationService("chrome")
 
     try:
         results = service.apply_to_jobs(applications, cv_analysis, user_credentials)

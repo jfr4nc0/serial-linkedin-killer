@@ -394,6 +394,211 @@ class TerminalUI:
         """Start timing the workflow."""
         self.start_time = time.time()
 
+    def print_company_filter_menu(
+        self, column_name: str, unique_values: List[str]
+    ) -> List[str]:
+        """Display unique values for a column and prompt user to select.
+
+        Returns list of selected values, or empty list for 'all'.
+        """
+        table = Table(
+            title=f"Available {column_name.title()} values",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("#", style="cyan", width=4)
+        table.add_column(column_name.title(), style="green")
+
+        for i, value in enumerate(unique_values, 1):
+            table.add_row(str(i), value)
+
+        self.console.print(table)
+        self.console.print()
+
+        selection = self.console.input(
+            f"Select {column_name} (comma-separated numbers, or 'all'): "
+        ).strip()
+
+        if not selection or selection.lower() == "all":
+            return []
+
+        selected = []
+        for part in selection.split(","):
+            part = part.strip()
+            if part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(unique_values):
+                    selected.append(unique_values[idx])
+
+        return selected
+
+    def print_filtered_companies_summary(self, companies: List[Dict[str, Any]], total: int):
+        """Print summary of filtered companies."""
+        self.console.print(
+            f"\nFiltered to [bold green]{len(companies)}[/bold green] companies "
+            f"(from {total} total)\n"
+        )
+
+        if not companies:
+            return
+
+        table = Table(
+            title="Sample Companies",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("Name", style="cyan")
+        table.add_column("Industry", style="green")
+        table.add_column("Country", style="yellow")
+        table.add_column("Size", style="blue")
+
+        for company in companies[:10]:
+            table.add_row(
+                company.get("name", ""),
+                company.get("industry", ""),
+                company.get("country", ""),
+                company.get("size", ""),
+            )
+
+        if len(companies) > 10:
+            table.add_row("...", "...", "...", "...")
+
+        self.console.print(table)
+        self.console.print()
+
+    def print_outreach_results(self, message_results: List[Dict[str, Any]]):
+        """Print outreach message results."""
+        if not message_results:
+            self.console.print("No messages sent", style="yellow")
+            return
+
+        table = Table(
+            title="Outreach Results",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("Employee", style="cyan")
+        table.add_column("Method", style="blue")
+        table.add_column("Status", style="green")
+        table.add_column("Error", style="red", max_width=40)
+
+        successful = 0
+        for result in message_results:
+            status = "Sent" if result.get("sent") else "Failed"
+            if result.get("sent"):
+                successful += 1
+            error = result.get("error", "") or ""
+            table.add_row(
+                result.get("employee_name", "Unknown"),
+                result.get("method", ""),
+                status,
+                error[:40] + "..." if len(error) > 40 else error,
+            )
+
+        self.console.print(table)
+        self.console.print(
+            f"\n[bold]Total: {successful}/{len(message_results)} messages sent[/bold]\n"
+        )
+
+    def print_outreach_summary(self, final_state: Dict[str, Any]):
+        """Print final outreach workflow summary."""
+        elapsed_time = ""
+        if self.start_time:
+            elapsed = time.time() - self.start_time
+            elapsed_time = f" (Completed in {elapsed:.1f}s)"
+
+        summary_text = Text()
+        summary_text.append("Summary:\n", style="bold blue")
+        summary_text.append(
+            f"  Companies processed: {len(final_state.get('companies', []))}\n",
+            style="green",
+        )
+        summary_text.append(
+            f"  Employees found: {len(final_state.get('employees_found', []))}\n",
+            style="cyan",
+        )
+        summary_text.append(
+            f"  Messages sent: {final_state.get('messages_sent_today', 0)}\n",
+            style="yellow",
+        )
+
+        if final_state.get("errors"):
+            summary_text.append(
+                f"  Errors: {len(final_state['errors'])}\n", style="red"
+            )
+
+        summary_text.append(
+            f"\nStatus: {final_state.get('current_status', 'Complete')}",
+            style="bold green",
+        )
+
+        panel = Panel(
+            summary_text,
+            title=f"Outreach Complete{elapsed_time}",
+            border_style="green",
+        )
+        self.console.print(panel)
+
+    def prompt_message_template(self) -> str:
+        """Prompt user for message template (inline or file path)."""
+        self.console.print(
+            "\nEnter message template. Use {employee_name}, {company_name}, "
+            "{employee_title}, {my_name}, {my_role} as placeholders.",
+            style="bold blue",
+        )
+        self.console.print(
+            "Enter a file path starting with '/' or './' to load from file.",
+        )
+        self.console.print(
+            "Or type your message (end with an empty line):\n",
+        )
+
+        lines = []
+        while True:
+            line = self.console.input("")
+            if line == "":
+                if lines:
+                    break
+                continue
+            lines.append(line)
+
+        text = "\n".join(lines)
+
+        # Check if it's a file path
+        if text.startswith("/") or text.startswith("./"):
+            from pathlib import Path
+            path = Path(text.strip())
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+            else:
+                self.console.print(f"File not found: {text}", style="red")
+                return self.prompt_message_template()
+
+        return text
+
+    def prompt_template_variables(self) -> Dict[str, str]:
+        """Prompt user for static template variables."""
+        self.console.print("\nStatic template variables:", style="bold blue")
+        variables = {}
+
+        my_name = self.console.input("Your name: ").strip()
+        if my_name:
+            variables["my_name"] = my_name
+
+        my_role = self.console.input("Your role/title: ").strip()
+        if my_role:
+            variables["my_role"] = my_role
+
+        topic = self.console.input("Topic/reason for outreach (optional): ").strip()
+        if topic:
+            variables["topic"] = topic
+
+        custom_closing = self.console.input("Custom closing (optional): ").strip()
+        if custom_closing:
+            variables["custom_closing"] = custom_closing
+
+        return variables
+
     def prompt_user_input(self, message: str, default: Optional[str] = None) -> str:
         """Prompt user for input."""
         if default:

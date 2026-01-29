@@ -46,7 +46,7 @@ class LinkedInMCPClient:
                 "run",
                 "python",
                 "-m",
-                "linkedin_mcp.linkedin.linkedin_server",
+                "src.linkedin_mcp.linkedin.linkedin_server",
             ]
             command = command_parts[0] if command_parts else "python"
             args = command_parts[1:] if len(command_parts) > 1 else []
@@ -153,6 +153,50 @@ class LinkedInMCPClient:
             JobResult(id_job=job["id_job"], job_description=job["job_description"])
             for job in result
         ]
+
+    async def search_employees(
+        self,
+        company_linkedin_url: str,
+        company_name: str,
+        email: str,
+        password: str,
+        limit: int = 10,
+        trace_id: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Search for employees at a company on LinkedIn via MCP protocol."""
+        arguments = {
+            "company_linkedin_url": company_linkedin_url,
+            "company_name": company_name,
+            "email": email,
+            "password": password,
+            "limit": limit,
+        }
+        if trace_id:
+            arguments["trace_id"] = trace_id
+
+        return await self._call_tool("search_employees", arguments)
+
+    async def send_message(
+        self,
+        employee_profile_url: str,
+        employee_name: str,
+        message: str,
+        email: str,
+        password: str,
+        trace_id: str = None,
+    ) -> Dict[str, Any]:
+        """Send a message or connection request to a LinkedIn user via MCP protocol."""
+        arguments = {
+            "employee_profile_url": employee_profile_url,
+            "employee_name": employee_name,
+            "message": message,
+            "email": email,
+            "password": password,
+        }
+        if trace_id:
+            arguments["trace_id"] = trace_id
+
+        return await self._call_tool("send_message", arguments)
 
     async def easy_apply_for_jobs(
         self,

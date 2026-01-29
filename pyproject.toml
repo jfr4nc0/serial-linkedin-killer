@@ -6,7 +6,6 @@ authors = ["Joan Canossa <jfcpersonal99@gmail.com>"]
 readme = "README.md"
 packages = [
     {include = "src"},
-    {include = "linkedin_mcp"}
 ]
 
 [tool.poetry.dependencies]
@@ -38,6 +37,9 @@ setuptools = "^80.9.0"
 uvicorn = {extras = ["standard"], version = "^0.37.0"}
 httpx = "^0.28.1"
 websockets = ">=14.0"
+pandas = "^2.2.0"
+langchain-openai = "^0.3.0"
+pytest = "^9.0.2"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -12,12 +12,14 @@ import typer
 from dotenv import load_dotenv
 from loguru import logger
 from rich.console import Console
+from rich.panel import Panel
 
 from cli.config import CLIConfig, JobSearchConfig
 from cli.ui import TerminalUI
 from src.core.agent import JobApplicationAgent
 from src.core.utils.logging_config import (
     configure_core_agent_logging,
+    get_core_agent_logger,
     log_core_agent_completion,
     log_core_agent_startup,
 )
@@ -69,6 +71,23 @@ class JobApplicationCLI:
         def test_connection():
             """Test connection to MCP server."""
             self._test_connection_command("localhost", 3000)
+
+        @self.app.command("outreach")
+        def outreach(
+            config_file: str = typer.Option(
+                "", "--config", "-c", help="Path to agent config YAML"
+            ),
+            interactive: bool = typer.Option(
+                True, help="Interactive mode"
+            ),
+            warm_up: bool = typer.Option(
+                False, help="Warm-up mode: cap at 10 messages"
+            ),
+        ):
+            """Run the employee outreach workflow."""
+            self._run_outreach_command(
+                config_file or None, interactive, warm_up
+            )
 
     def _run_workflow_command(
         self,
@@ -466,6 +485,8 @@ class JobApplicationCLI:
 
     def _save_results(self, final_state: Dict[str, Any]):
         """Save workflow results to file."""
+        # Initialize logger outside try block to ensure it's available in except
+        save_logger = None
         try:
             # Use bound logger for save operations
             save_logger = get_core_agent_logger("save-results")
@@ -490,10 +511,195 @@ class JobApplicationCLI:
             self.ui.console.print(f"📁 Results saved to {filepath}", style="blue")
 
         except Exception as e:
-            save_logger.warning(f"Failed to save results: {str(e)}")
+            if save_logger:
+                save_logger.warning(f"Failed to save results: {str(e)}")
+            else:
+                self.ui.console.print(f"❌ Failed to save results: {str(e)}", style="red")
             self.ui.console.print(
                 f"⚠️  Failed to save results: {str(e)}", style="yellow"
             )
+
+    def _run_outreach_command(
+        self,
+        config_file: Optional[str],
+        interactive: bool,
+        warm_up: bool,
+    ):
+        """Execute the outreach workflow command."""
+        from src.config.config_loader import load_config
+        from src.core.agents.outreach_agent import EmployeeOutreachAgent
+        from src.core.tools.company_loader import (
+            filter_companies,
+            get_unique_values,
+            load_companies,
+        )
+        from src.core.tools.message_template import render_template
+
+        try:
+            self.ui = TerminalUI("rich")
+            self.ui.start_timer()
+
+            # Load central config
+            config = load_config(config_file)
+
+            self.ui.console.print(
+                Panel(
+                    "LinkedIn Employee Outreach Agent",
+                    subtitle="Automated employee messaging system",
+                    border_style="blue",
+                )
+            )
+            self.ui.console.print()
+
+            # Load company dataset
+            dataset_path = config.outreach.dataset_path
+            self.ui.console.print(f"Loading dataset from {dataset_path}...")
+            df = load_companies(dataset_path)
+            total_count = len(df)
+            self.ui.console.print(
+                f"Loaded [bold green]{total_count}[/bold green] companies\n"
+            )
+
+            # Interactive filtering
+            filters = {}
+            if interactive:
+                # Industry filter
+                industries = get_unique_values(df, "industry")
+                if industries:
+                    selected = self.ui.print_company_filter_menu("industry", industries)
+                    if selected:
+                        filters["industry"] = selected
+
+                # Country filter
+                countries = get_unique_values(df, "country")
+                if countries:
+                    selected = self.ui.print_company_filter_menu("country", countries)
+                    if selected:
+                        filters["country"] = selected
+
+                # Size filter
+                sizes = get_unique_values(df, "size")
+                if sizes:
+                    selected = self.ui.print_company_filter_menu("size", sizes)
+                    if selected:
+                        filters["size"] = selected
+            else:
+                # Use filters from config
+                if config.outreach.filters.industry:
+                    filters["industry"] = config.outreach.filters.industry
+                if config.outreach.filters.country:
+                    filters["country"] = config.outreach.filters.country
+                if config.outreach.filters.size:
+                    filters["size"] = config.outreach.filters.size
+
+            # Apply filters
+            filtered_df = filter_companies(df, filters)
+            companies = filtered_df.to_dict("records")
+
+            # Show summary
+            self.ui.print_filtered_companies_summary(companies, total_count)
+
+            if not companies:
+                self.ui.console.print("No companies match the filters.", style="red")
+                return
+
+            # Confirm
+            if interactive and not typer.confirm("Proceed with these companies?"):
+                self.ui.console.print("Cancelled.", style="yellow")
+                return
+
+            # Message template
+            if interactive:
+                message_template = self.ui.prompt_message_template()
+                template_variables = self.ui.prompt_template_variables()
+            else:
+                # Load from config
+                if config.outreach.message_template_path:
+                    from src.core.tools.message_template import load_template
+                    message_template = load_template(config.outreach.message_template_path)
+                else:
+                    message_template = config.outreach.message_template
+                template_variables = {}
+
+            if not message_template:
+                self.ui.console.print("No message template provided.", style="red")
+                return
+
+            # Preview template
+            sample_vars = {
+                **template_variables,
+                "employee_name": "John Doe",
+                "company_name": companies[0].get("name", "Example Co"),
+                "employee_title": "Software Engineer",
+            }
+            preview = render_template(message_template, sample_vars)
+            self.ui.console.print(
+                Panel(preview, title="Message Preview", border_style="cyan")
+            )
+            self.ui.console.print()
+
+            if interactive and not typer.confirm("Send messages with this template?"):
+                self.ui.console.print("Cancelled.", style="yellow")
+                return
+
+            # Credentials
+            email = config.linkedin.email or os.getenv("LINKEDIN_EMAIL", "")
+            password = config.linkedin.password or os.getenv("LINKEDIN_PASSWORD", "")
+            if not email or not password:
+                self.ui.console.print(
+                    "LinkedIn credentials required (config or LINKEDIN_EMAIL/LINKEDIN_PASSWORD env vars)",
+                    style="red",
+                )
+                return
+
+            user_credentials = {"email": email, "password": password}
+
+            # Override daily limit for warm-up
+            if warm_up:
+                config.outreach.daily_message_limit = 10
+                self.ui.console.print(
+                    "Warm-up mode: limiting to 10 messages\n", style="yellow"
+                )
+
+            # Run the outreach agent
+            agent = EmployeeOutreachAgent(config_file)
+
+            from rich.live import Live
+            from rich.spinner import Spinner
+            from rich.text import Text
+
+            with Live(
+                Spinner("dots", text="Running outreach workflow..."),
+                console=self.ui.console,
+            ) as live:
+                final_state = agent.run(
+                    companies=companies,
+                    message_template=message_template,
+                    template_variables=template_variables,
+                    user_credentials=user_credentials,
+                )
+                live.update(Text("Outreach workflow completed!", style="bold green"))
+
+            # Display results
+            if final_state.get("message_results"):
+                self.ui.print_outreach_results(final_state["message_results"])
+
+            if final_state.get("errors"):
+                self.ui.print_errors(final_state["errors"])
+
+            self.ui.print_outreach_summary(final_state)
+
+            # Save results
+            self._save_results(final_state)
+
+        except KeyboardInterrupt:
+            self.ui.console.print("\nOutreach interrupted by user", style="red")
+            sys.exit(1)
+        except Exception as e:
+            if self.ui:
+                self.ui.console.print(f"Outreach failed: {str(e)}", style="red")
+            logger.exception("Outreach workflow failed")
+            sys.exit(1)
 
     def run(self):
         """Run the CLI application."""
