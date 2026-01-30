@@ -275,11 +275,6 @@ class JobApplicationAgent:
         # Generate single trace_id for this entire agent run
         trace_id = str(uuid.uuid4())
 
-        # Configure logging with this trace_id
-        from src.core.utils.logging_config import configure_core_agent_logging
-
-        configure_core_agent_logging(default_trace_id=trace_id)
-
         # Get logger for this run
         agent_logger = get_core_agent_logger(trace_id)
 

@@ -71,6 +71,7 @@ class EmployeeOutreachAgent:
         agent_logger = get_core_agent_logger(trace_id)
 
         all_employees = []
+        mcp_client = None
 
         try:
             mcp_client = LinkedInMCPClientSync()
@@ -94,7 +95,6 @@ class EmployeeOutreachAgent:
 
             if not companies_to_search:
                 return {
-                    **state,
                     "employees_found": [],
                     "current_status": "No companies with LinkedIn URLs to search",
                 }
@@ -125,7 +125,6 @@ class EmployeeOutreachAgent:
                     ]
 
             return {
-                **state,
                 "employees_found": all_employees,
                 "current_status": f"Found {len(all_employees)} employees across {len(companies_to_search)} companies",
             }
@@ -133,10 +132,11 @@ class EmployeeOutreachAgent:
         except Exception as e:
             error_msg = f"Batch employee search failed: {str(e)}"
             return {
-                **state,
                 "errors": state.get("errors", []) + [error_msg],
                 "current_status": "Employee search failed",
             }
+        finally:
+            del mcp_client
 
     def send_messages_node(self, state: OutreachAgentState) -> Dict[str, Any]:
         """Send messages to all found employees via MCP (legacy single-template mode)."""
@@ -202,7 +202,6 @@ class EmployeeOutreachAgent:
             successful = sum(1 for r in message_results if r.get("sent"))
 
             return {
-                **state,
                 "message_results": message_results,
                 "messages_sent_today": messages_sent,
                 "current_status": f"Sent {successful}/{len(message_results)} messages",
@@ -211,7 +210,6 @@ class EmployeeOutreachAgent:
         except Exception as e:
             error_msg = f"Message sending failed: {str(e)}"
             return {
-                **state,
                 "errors": state.get("errors", []) + [error_msg],
                 "current_status": "Message sending failed",
             }
@@ -301,7 +299,6 @@ class EmployeeOutreachAgent:
             successful = sum(1 for r in message_results if r.get("sent"))
 
             return {
-                **state,
                 "message_results": message_results,
                 "messages_sent_today": messages_sent,
                 "current_status": f"Sent {successful}/{len(message_results)} messages",
@@ -310,7 +307,6 @@ class EmployeeOutreachAgent:
         except Exception as e:
             error_msg = f"Message sending failed: {str(e)}"
             return {
-                **state,
                 "errors": state.get("errors", []) + [error_msg],
                 "current_status": "Message sending failed",
             }
@@ -333,10 +329,6 @@ class EmployeeOutreachAgent:
             List of employee dicts found
         """
         trace_id = str(uuid.uuid4())
-
-        from src.core.utils.logging_config import configure_core_agent_logging
-
-        configure_core_agent_logging(default_trace_id=trace_id)
 
         agent_logger = get_core_agent_logger(trace_id)
         agent_logger.info(
@@ -394,10 +386,6 @@ class EmployeeOutreachAgent:
         """
         trace_id = trace_id or str(uuid.uuid4())
 
-        from src.core.utils.logging_config import configure_core_agent_logging
-
-        configure_core_agent_logging(default_trace_id=trace_id)
-
         agent_logger = get_core_agent_logger(trace_id)
         agent_logger.info(
             "Starting send phase",
@@ -451,10 +439,6 @@ class EmployeeOutreachAgent:
             Final agent state with all results
         """
         trace_id = str(uuid.uuid4())
-
-        from src.core.utils.logging_config import configure_core_agent_logging
-
-        configure_core_agent_logging(default_trace_id=trace_id)
 
         agent_logger = get_core_agent_logger(trace_id)
         agent_logger.info(

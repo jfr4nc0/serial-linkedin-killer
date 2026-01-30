@@ -12,6 +12,9 @@ export MCP_SERVER_PORT=${MCP_SERVER_PORT:-3000}
 XVFB_PID=""
 
 cleanup() {
+    # Kill any orphan chrome/chromedriver processes from automation
+    pkill -f "chrome.*--user-data-dir=$HOME/chrome" 2>/dev/null || true
+    pkill -f "chromedriver" 2>/dev/null || true
     if [ -n "$XVFB_PID" ]; then
         kill "$XVFB_PID" 2>/dev/null || true
     fi
@@ -33,4 +36,4 @@ fi
 
 echo "MCP Server: $MCP_SERVER_HOST:$MCP_SERVER_PORT"
 
-exec python -m src.linkedin_mcp.linkedin.linkedin_server
+exec python -m src.linkedin_mcp.linkedin.linkedin_server --host "$MCP_SERVER_HOST" --port "$MCP_SERVER_PORT"

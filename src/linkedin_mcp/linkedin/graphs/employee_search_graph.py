@@ -67,11 +67,10 @@ class EmployeeSearchGraph:
             # Wait for page load — just enough for DOM to be ready
             state["browser_manager"].random_delay(1, 2)
 
-            return state
+            return {}
 
         except Exception as e:
             return {
-                **state,
                 "errors": state["errors"]
                 + [f"Failed to navigate to people page: {str(e)}"],
             }
@@ -91,7 +90,6 @@ class EmployeeSearchGraph:
             except Exception:
                 logger.warning("No employee cards found on page")
                 return {
-                    **state,
                     "errors": state["errors"] + ["No employee cards found on page"],
                 }
 
@@ -168,14 +166,12 @@ class EmployeeSearchGraph:
             )
 
             return {
-                **state,
                 "collected_employees": state["collected_employees"] + new_employees,
                 "extracted_urls": extracted_urls,
             }
 
         except Exception as e:
             return {
-                **state,
                 "errors": state["errors"] + [f"Failed to extract employees: {str(e)}"],
             }
 
@@ -218,11 +214,10 @@ class EmployeeSearchGraph:
                 logger.warning("No new cards loaded after clicking Show more")
 
             state["browser_manager"].random_delay(0.5, 1)
-            return state
+            return {}
 
         except Exception as e:
             return {
-                **state,
                 "errors": state["errors"] + [f"Failed to load more results: {str(e)}"],
             }
 

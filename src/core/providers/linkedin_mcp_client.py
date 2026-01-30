@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 from fastmcp import Client
-from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+from fastmcp.client.transports import StreamableHttpTransport
 
 from src.core.model import ApplicationRequest, ApplicationResult, CVAnalysis, JobResult
 
@@ -19,16 +19,8 @@ class LinkedInMCPClient:
     The client manages the LinkedIn MCP server lifecycle as a subprocess.
     """
 
-    def __init__(
-        self,
-        use_http: bool = True,
-        server_url: Optional[str] = None,
-        keep_alive: bool = True,
-    ):
-        self.use_http = use_http
-
-        # Build server URL from config if not provided
-        if server_url is None and use_http:
+    def __init__(self, server_url: Optional[str] = None):
+        if server_url is None:
             from src.config.config_loader import load_config
 
             config = load_config()
@@ -36,34 +28,8 @@ class LinkedInMCPClient:
             port = os.getenv("MCP_SERVER_PORT", str(config.mcp_server.port))
             server_url = f"http://{host}:{port}/mcp"
 
-        if use_http:
-            # Use StreamableHttpTransport - connect to running HTTP server
-            self.transport = StreamableHttpTransport(server_url)
-            self.client = Client(self.transport)
-        else:
-            # Use stdio transport - launch server as subprocess
-            env = {
-                "LINKEDIN_EMAIL": os.getenv("LINKEDIN_EMAIL"),
-                "LINKEDIN_PASSWORD": os.getenv("LINKEDIN_PASSWORD"),
-                "LINKEDIN_MCP_LOG_LEVEL": os.getenv("LINKEDIN_MCP_LOG_LEVEL", "INFO"),
-                "LINKEDIN_MCP_LOG_FILE": os.getenv("LINKEDIN_MCP_LOG_FILE"),
-            }
-            env = {k: v for k, v in env.items() if v is not None}
-
-            command_parts = [
-                "poetry",
-                "run",
-                "python",
-                "-m",
-                "src.linkedin_mcp.linkedin.linkedin_server",
-            ]
-            command = command_parts[0] if command_parts else "python"
-            args = command_parts[1:] if len(command_parts) > 1 else []
-
-            self.transport = StdioTransport(
-                command=command, args=args, env=env, keep_alive=keep_alive
-            )
-            self.client = Client(self.transport)
+        self.transport = StreamableHttpTransport(server_url)
+        self.client = Client(self.transport)
 
     async def __aenter__(self):
         # FastMCP client handles both HTTP and stdio connections
@@ -113,9 +79,8 @@ class LinkedInMCPClient:
             return result.data
 
         except Exception as e:
-            transport_type = "HTTP" if self.use_http else "stdio"
             raise Exception(
-                f"FastMCP tool call failed for '{tool_name}' via {transport_type}: {str(e)}"
+                f"FastMCP tool call failed for '{tool_name}' via HTTP: {str(e)}"
             )
 
     async def search_jobs(

@@ -22,6 +22,10 @@ _outreach_service: OutreachService | None = None
 async def lifespan(app: FastAPI):
     global _producer, _session_store, _job_service, _outreach_service
 
+    from src.core.utils.logging_config import configure_core_agent_logging
+
+    configure_core_agent_logging()
+
     logger.info("Initializing Kafka producer, session store, and services")
     _producer = KafkaResultProducer()
     _session_store = SessionStore(ttl=3600)  # 1 hour session TTL

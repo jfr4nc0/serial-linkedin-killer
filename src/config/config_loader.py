@@ -82,6 +82,7 @@ class AgentConfig(BaseModel):
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "agent.yaml"
+_cached_config: Optional["AgentConfig"] = None
 
 
 def load_config(config_path: Optional[str] = None) -> AgentConfig:
@@ -89,6 +90,11 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
 
     Priority: env vars > YAML file > defaults.
     """
+    global _cached_config
+
+    if _cached_config is not None and config_path is None:
+        return _cached_config
+
     path = Path(config_path) if config_path else _DEFAULT_CONFIG_PATH
 
     data: Dict = {}
@@ -127,5 +133,8 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
                 else value
             )
             setattr(obj, field, cast_value)
+
+    if config_path is None:
+        _cached_config = config
 
     return config

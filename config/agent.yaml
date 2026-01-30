@@ -6,7 +6,7 @@ llm:
 
 mcp_server:
   host: "localhost"
-  port: 8000
+  port: 3000
 
 linkedin:
   email: "" # or use LINKEDIN_EMAIL env var

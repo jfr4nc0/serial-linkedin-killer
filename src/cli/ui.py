@@ -440,7 +440,7 @@ class TerminalUI:
         self.console.print()
         self.console.print(
             f"  [dim]Enter numbers (1,3,5), search text to filter, "
-            f"'all' to skip, 'list' to show all, 'done' when finished[/dim]"
+            f"'all' to skip, ENTER to confirm selection[/dim]"
         )
 
         while True:
@@ -451,11 +451,11 @@ class TerminalUI:
             )
             raw = self.console.input(prompt).strip()
 
-            if not raw or raw.lower() == "all":
-                return []
-
-            if raw.lower() == "done":
+            if not raw:
                 return selected
+
+            if raw.lower() in ("all", "skip"):
+                return []
 
             if raw.lower() == "list":
                 self._display_values_table(column_name, unique_values)

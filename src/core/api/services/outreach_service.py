@@ -1,5 +1,6 @@
 """Service layer for the employee outreach workflow."""
 
+import gc
 import threading
 import uuid
 from typing import Optional
@@ -79,6 +80,7 @@ class OutreachService:
             )
         finally:
             del agent
+            gc.collect()
 
         # Cluster employees by role using LLM
         clustered = cluster_employees_by_role(employees)
@@ -224,6 +226,7 @@ class OutreachService:
             )
         finally:
             del agent
+            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)
 
@@ -303,5 +306,6 @@ class OutreachService:
             )
         finally:
             del agent
+            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)

@@ -347,11 +347,18 @@ def _shutdown_services(*args):
 
 atexit.register(_shutdown_services)
 
+
+def _signal_handler(sig, frame):
+    """Handle SIGTERM/SIGINT: cleanup then hard exit to avoid threading deadlocks."""
+    _shutdown_services()
+    os._exit(0)
+
+
 import threading
 
 if threading.current_thread() is threading.main_thread():
-    signal.signal(signal.SIGTERM, lambda s, f: (_shutdown_services(), sys.exit(0)))
-    signal.signal(signal.SIGINT, lambda s, f: (_shutdown_services(), sys.exit(0)))
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
 
 
 if __name__ == "__main__":
@@ -365,17 +372,11 @@ if __name__ == "__main__":
     default_port = int(os.getenv("MCP_SERVER_PORT", str(config.mcp_server.port)))
 
     parser = argparse.ArgumentParser(description="LinkedIn MCP Server")
-    parser.add_argument("--http", action="store_true", help="Run as HTTP server")
     parser.add_argument("--host", default=default_host, help="HTTP server host")
     parser.add_argument(
         "--port", type=int, default=default_port, help="HTTP server port"
     )
     args = parser.parse_args()
 
-    if args.http:
-        # Run as direct HTTP server using FastMCP's built-in HTTP transport
-        print(f"Starting LinkedIn MCP HTTP server on {args.host}:{args.port}")
-        mcp.run(transport="http", host=args.host, port=args.port)
-    else:
-        # Run via stdio transport (default MCP pattern)
-        mcp.run()
+    print(f"Starting LinkedIn MCP HTTP server on {args.host}:{args.port}")
+    mcp.run(transport="http", host=args.host, port=args.port)

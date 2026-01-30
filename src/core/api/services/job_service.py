@@ -1,5 +1,6 @@
 """Service layer for the job application workflow."""
 
+import gc
 import threading
 import uuid
 
@@ -84,5 +85,6 @@ class JobService:
             )
         finally:
             del agent
+            gc.collect()
 
         self._producer.publish(TOPIC_JOB_RESULTS, task_id, response)
