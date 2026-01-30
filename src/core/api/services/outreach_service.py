@@ -122,6 +122,7 @@ class OutreachService:
             target=self._run_send,
             args=(task_id, request, session),
             name=f"outreach-send-{task_id[:8]}",
+            daemon=True,
         )
         thread.start()
 
@@ -236,6 +237,7 @@ class OutreachService:
             target=self._run,
             args=(task_id, request),
             name=f"outreach-{task_id[:8]}",
+            daemon=True,
         )
         thread.start()
 

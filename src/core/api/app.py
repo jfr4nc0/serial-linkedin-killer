@@ -30,9 +30,17 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    logger.info("Shutting down Kafka producer")
+    logger.info("Shutting down services")
+    if _session_store:
+        _session_store.clear()
     if _producer:
         _producer.close()
+
+    from src.linkedin_mcp.linkedin.services.browser_manager_service import (
+        BrowserManagerService,
+    )
+
+    BrowserManagerService.cleanup_all()
 
 
 def get_job_service() -> JobService:

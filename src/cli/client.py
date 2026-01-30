@@ -547,6 +547,14 @@ class JobApplicationCLI:
                     selected = self.ui.print_company_filter_menu("size", sizes)
                     if selected:
                         filters["size"] = selected
+
+                # Ask for total employee limit (optional)
+                if total_limit is None:
+                    limit_input = self.ui.prompt_user_input(
+                        "Max total employees to search (leave empty for no limit)"
+                    )
+                    if limit_input and limit_input.isdigit():
+                        total_limit = int(limit_input)
             else:
                 if config.outreach.filters.industry:
                     filters["industry"] = config.outreach.filters.industry

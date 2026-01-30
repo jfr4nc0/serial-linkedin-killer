@@ -3,7 +3,10 @@ LinkedIn MCP Server - Main entry point
 Uses standard TCP implementation for MCP protocol
 """
 
+import atexit
 import os
+import signal
+import sys
 
 from fastmcp import FastMCP
 
@@ -321,6 +324,34 @@ log_mcp_tool_registration(
         },
     ]
 )
+
+
+def _shutdown_services(*args):
+    """Cleanup all services on shutdown."""
+    for service in [
+        employee_outreach_service,
+        job_search_service,
+        job_application_service,
+    ]:
+        try:
+            if hasattr(service, "browser_manager"):
+                service.browser_manager.close_browser()
+        except Exception:
+            pass
+    from src.linkedin_mcp.linkedin.services.browser_manager_service import (
+        BrowserManagerService,
+    )
+
+    BrowserManagerService.cleanup_all()
+
+
+atexit.register(_shutdown_services)
+
+import threading
+
+if threading.current_thread() is threading.main_thread():
+    signal.signal(signal.SIGTERM, lambda s, f: (_shutdown_services(), sys.exit(0)))
+    signal.signal(signal.SIGINT, lambda s, f: (_shutdown_services(), sys.exit(0)))
 
 
 if __name__ == "__main__":

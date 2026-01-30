@@ -144,10 +144,9 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                         )
                     )
 
-                # Delay between companies for anti-detection
+                # Brief delay between companies for anti-detection
                 if i < len(companies) - 1:
-                    delay = random.uniform(2, 5)
-                    logger.info(f"Waiting {delay:.1f}s before next company")
+                    delay = random.uniform(1, 2)
                     time.sleep(delay)
 
             return results

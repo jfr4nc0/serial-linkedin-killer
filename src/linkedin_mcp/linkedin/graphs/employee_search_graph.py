@@ -1,11 +1,8 @@
 """LangGraph workflow for searching employees at a LinkedIn company page."""
 
-import time
 from typing import Any, Dict, List
 
 from langgraph.graph import END, StateGraph
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.linkedin_mcp.linkedin.interfaces.services import IBrowserManager
@@ -27,7 +24,7 @@ logger = get_mcp_logger()
 class EmployeeSearchGraph:
     """LangGraph workflow for searching employees on a LinkedIn company page."""
 
-    MAX_SHOW_MORE_CLICKS = 20  # Safety limit to avoid infinite loops
+    MAX_SHOW_MORE_CLICKS = 20
 
     def __init__(self, browser_manager: IBrowserManager):
         self.browser_manager = browser_manager
@@ -67,7 +64,8 @@ class EmployeeSearchGraph:
             people_url = f"{url}/people/"
             logger.info(f"Navigating to {people_url}")
             state["browser_manager"].driver.get(people_url)
-            state["browser_manager"].random_delay(2, 4)
+            # Wait for page load — just enough for DOM to be ready
+            state["browser_manager"].random_delay(1, 2)
 
             return state
 
@@ -87,7 +85,7 @@ class EmployeeSearchGraph:
 
             # Wait for cards to be present
             try:
-                WebDriverWait(driver, 10).until(
+                WebDriverWait(driver, 8).until(
                     lambda d: LinkedInEmployeeSelectors.CARD.find_elements(d)
                 )
             except Exception:
@@ -101,6 +99,15 @@ class EmployeeSearchGraph:
             logger.info(
                 f"Found {len(cards)} total cards, {len(extracted_urls)} already extracted"
             )
+
+            # Scroll to bottom of the cards section in one go to ensure
+            # all card DOM content is rendered (avoids per-card scrolling)
+            if cards:
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'end'});",
+                    cards[-1],
+                )
+                state["browser_manager"].random_delay(0.3, 0.5)
 
             for card in cards:
                 if (
@@ -119,16 +126,8 @@ class EmployeeSearchGraph:
                     except SelectorFailure:
                         continue
 
-                    # Skip already-extracted
                     if profile_url in extracted_urls:
                         continue
-
-                    # Scroll into view
-                    driver.execute_script(
-                        "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
-                        card,
-                    )
-                    state["browser_manager"].random_delay(0.2, 0.4)
 
                     # Extract name
                     try:
@@ -188,7 +187,6 @@ class EmployeeSearchGraph:
             )
             return "finish"
 
-        # Check if "Show more" button exists
         try:
             driver = state["browser_manager"].driver
             show_more = LinkedInEmployeeSelectors.SHOW_MORE.find_element(driver)
@@ -207,23 +205,19 @@ class EmployeeSearchGraph:
             cards_before = len(LinkedInEmployeeSelectors.CARD.find_elements(driver))
 
             show_more = LinkedInEmployeeSelectors.SHOW_MORE.find_element(driver)
-            driver.execute_script(
-                "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
-                show_more,
-            )
-            state["browser_manager"].random_delay(0.5, 1)
-            show_more.click()
+            # Use JS click — faster than scrolling into view + selenium click
+            driver.execute_script("arguments[0].click();", show_more)
 
             # Wait for new cards to appear
             try:
-                WebDriverWait(driver, 10).until(
+                WebDriverWait(driver, 8).until(
                     lambda d: len(LinkedInEmployeeSelectors.CARD.find_elements(d))
                     > cards_before
                 )
             except Exception:
                 logger.warning("No new cards loaded after clicking Show more")
 
-            state["browser_manager"].random_delay(1, 2)
+            state["browser_manager"].random_delay(0.5, 1)
             return state
 
         except Exception as e:

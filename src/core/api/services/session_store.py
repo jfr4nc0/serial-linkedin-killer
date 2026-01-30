@@ -119,6 +119,11 @@ class SessionStore:
 
         return len(expired)
 
+    def clear(self) -> None:
+        """Remove all sessions."""
+        with self._lock:
+            self._sessions.clear()
+
     def count(self) -> int:
         """Return number of active sessions."""
         with self._lock:

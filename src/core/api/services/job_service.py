@@ -25,6 +25,7 @@ class JobService:
             target=self._run,
             args=(task_id, request),
             name=f"job-apply-{task_id[:8]}",
+            daemon=True,
         )
         thread.start()
 

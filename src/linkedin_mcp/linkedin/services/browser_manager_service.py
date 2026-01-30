@@ -1,6 +1,11 @@
+import atexit
 import os
 import random
+import shutil
+import signal
+import sys
 import time
+import weakref
 from typing import Optional
 
 import undetected_chromedriver as uc
@@ -25,6 +30,9 @@ from src.linkedin_mcp.linkedin.utils.user_agent_rotator import user_agent_rotato
 class BrowserManagerService(IBrowserManager):
     """Manages browser instances for LinkedIn automation."""
 
+    # Track all live instances via weak references for cleanup on exit
+    _instances: list[weakref.ref] = []
+
     def __init__(
         self,
         headless: bool = False,
@@ -40,6 +48,14 @@ class BrowserManagerService(IBrowserManager):
         self.chrome_binary_path = chrome_binary_path
         self.driver: Optional[webdriver.Chrome] = None
         self.wait: Optional[WebDriverWait] = None
+        BrowserManagerService._instances.append(weakref.ref(self))
+
+    def __del__(self):
+        """Safety net: cleanup browser if object is garbage collected."""
+        try:
+            self.close_browser()
+        except Exception:
+            pass
 
     def _get_chrome_options(self) -> Options:
         """Configure Chrome options for LinkedIn automation."""
@@ -55,10 +71,14 @@ class BrowserManagerService(IBrowserManager):
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
 
-        # Performance options
+        # Performance and memory options
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-plugins")
         options.add_argument("--disable-images")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--renderer-process-limit=1")
+        options.add_argument("--js-flags=--max-old-space-size=256")
 
         # Use ~/chrome directory for user data with undetected-chromedriver
         chrome_user_data = os.path.expanduser("~/chrome")
@@ -130,52 +150,52 @@ class BrowserManagerService(IBrowserManager):
         """Start and configure the browser based on browser_type."""
 
         if self.browser_type == "firefox":
-            print("🦊 Starting Firefox...")
+            print("Starting Firefox...")
             try:
                 self.driver = self._start_firefox()
-                print("✅ Firefox started successfully")
+                print("Firefox started successfully")
             except Exception as e:
-                print(f"❌ Firefox failed: {str(e)}")
-                print("🌐 Trying Chrome as fallback...")
+                print(f"Firefox failed: {str(e)}")
+                print("Trying Chrome as fallback...")
                 try:
                     self.driver = self._start_chrome()
-                    print("✅ Chrome started successfully")
+                    print("Chrome started successfully")
                 except Exception as chrome_error:
-                    print(f"❌ Chrome also failed: {str(chrome_error)}")
+                    print(f"Chrome also failed: {str(chrome_error)}")
                     raise e
         elif self.browser_type == "chromium":
-            print("🔷 Starting Chromium...")
+            print("Starting Chromium...")
             try:
                 self.driver = self._start_chromium()
-                print("✅ Chromium started successfully")
+                print("Chromium started successfully")
             except Exception as e:
-                print(f"❌ Chromium failed: {str(e)}")
-                print("🌐 Trying Chrome as fallback...")
+                print(f"Chromium failed: {str(e)}")
+                print("Trying Chrome as fallback...")
                 try:
                     self.driver = self._start_chrome()
-                    print("✅ Chrome started successfully")
+                    print("Chrome started successfully")
                 except Exception as chrome_error:
-                    print(f"❌ Chrome also failed: {str(chrome_error)}")
-                    print("🦊 Trying Firefox as final fallback...")
+                    print(f"Chrome also failed: {str(chrome_error)}")
+                    print("Trying Firefox as final fallback...")
                     try:
                         self.driver = self._start_firefox()
-                        print("✅ Firefox started successfully")
+                        print("Firefox started successfully")
                     except Exception as firefox_error:
-                        print(f"❌ All browsers failed: {str(firefox_error)}")
+                        print(f"All browsers failed: {str(firefox_error)}")
                         raise e
         else:  # Default to chrome
-            print("🌐 Starting Chrome...")
+            print("Starting Chrome...")
             try:
                 self.driver = self._start_chrome()
-                print("✅ Chrome started successfully")
+                print("Chrome started successfully")
             except Exception as e:
-                print(f"❌ Chrome failed: {str(e)}")
-                print("🦊 Trying Firefox as fallback...")
+                print(f"Chrome failed: {str(e)}")
+                print("Trying Firefox as fallback...")
                 try:
                     self.driver = self._start_firefox()
-                    print("✅ Firefox started successfully")
+                    print("Firefox started successfully")
                 except Exception as firefox_error:
-                    print(f"❌ Firefox also failed: {str(firefox_error)}")
+                    print(f"Firefox also failed: {str(firefox_error)}")
                     raise e
 
         # Remove webdriver property
@@ -187,11 +207,73 @@ class BrowserManagerService(IBrowserManager):
         return self.driver
 
     def close_browser(self):
-        """Close the browser and cleanup."""
+        """Close the browser and cleanup resources."""
         if self.driver:
-            self.driver.quit()
+            try:
+                self.driver.quit()
+            except Exception:
+                self._force_kill_browser()
             self.driver = None
             self.wait = None
+            self._clean_chrome_cache()
+
+    def _force_kill_browser(self):
+        """Force kill browser processes if quit() fails."""
+        try:
+            import psutil
+
+            if hasattr(self.driver, "service") and hasattr(
+                self.driver.service, "process"
+            ):
+                proc = self.driver.service.process
+                if proc and proc.pid:
+                    parent = psutil.Process(proc.pid)
+                    for child in parent.children(recursive=True):
+                        try:
+                            child.kill()
+                        except psutil.NoSuchProcess:
+                            pass
+                    try:
+                        parent.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+        except ImportError:
+            # psutil not available, try os.kill as fallback
+            try:
+                if (
+                    hasattr(self.driver, "service")
+                    and hasattr(self.driver.service, "process")
+                    and self.driver.service.process
+                ):
+                    os.kill(self.driver.service.process.pid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                pass
+        except Exception:
+            pass
+
+    @staticmethod
+    def _clean_chrome_cache():
+        """Remove heavy Chrome cache directories to prevent disk/memory growth."""
+        chrome_dir = os.path.expanduser("~/chrome")
+        for subdir in ["Default/Cache", "Default/Code Cache", "Default/Service Worker"]:
+            path = os.path.join(chrome_dir, subdir)
+            if os.path.isdir(path):
+                try:
+                    shutil.rmtree(path)
+                except Exception:
+                    pass
+
+    @classmethod
+    def cleanup_all(cls):
+        """Cleanup all browser instances. Called on process exit."""
+        for ref in cls._instances:
+            instance = ref()
+            if instance is not None:
+                try:
+                    instance.close_browser()
+                except Exception:
+                    pass
+        cls._instances.clear()
 
     # Interface methods
     def get_driver(self):
@@ -241,3 +323,28 @@ class BrowserManagerService(IBrowserManager):
         """Add random delay to mimic human behavior."""
         delay = random.uniform(min_seconds, max_seconds)
         time.sleep(delay)
+
+
+# --- Module-level cleanup handlers ---
+
+
+def _cleanup_browsers(*args):
+    """Cleanup all browser instances on process exit."""
+    BrowserManagerService.cleanup_all()
+
+
+atexit.register(_cleanup_browsers)
+
+
+def _signal_handler(sig, frame):
+    """Handle SIGTERM/SIGINT by cleaning up browsers then exiting."""
+    _cleanup_browsers()
+    sys.exit(0)
+
+
+# Only register signal handlers if not in a thread
+import threading
+
+if threading.current_thread() is threading.main_thread():
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)

@@ -41,4 +41,6 @@ class KafkaResultProducer:
         self._producer.flush()
 
     def close(self) -> None:
-        self._producer.flush()
+        if self._producer:
+            self._producer.flush()
+            self._producer = None
