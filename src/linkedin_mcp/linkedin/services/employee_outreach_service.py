@@ -8,7 +8,13 @@ from src.config.config_loader import load_config
 from src.linkedin_mcp.linkedin.graphs.employee_search_graph import EmployeeSearchGraph
 from src.linkedin_mcp.linkedin.graphs.message_send_graph import MessageSendGraph
 from src.linkedin_mcp.linkedin.interfaces.services import IEmployeeOutreachService
-from src.linkedin_mcp.linkedin.model.outreach_types import EmployeeResult, MessageResult
+from src.linkedin_mcp.linkedin.model.outreach_types import (
+    BatchEmployeeSearchResult,
+    CompanySearchRequest,
+    EmployeeResult,
+    MessageResult,
+)
+from src.linkedin_mcp.linkedin.utils.logging_config import get_mcp_logger
 from src.linkedin_mcp.linkedin.services.browser_manager_service import (
     BrowserManagerService as BrowserManager,
 )
@@ -68,6 +74,64 @@ class EmployeeOutreachService(IEmployeeOutreachService):
 
         except Exception as e:
             raise Exception(f"Employee search failed: {str(e)}")
+
+        finally:
+            if self.browser_manager:
+                self.browser_manager.close_browser()
+
+    def search_employees_batch(
+        self,
+        companies: List[CompanySearchRequest],
+        user_credentials: Dict[str, str],
+    ) -> List[BatchEmployeeSearchResult]:
+        """Search employees across multiple companies with a SINGLE browser session."""
+        logger = get_mcp_logger()
+        try:
+            self._ensure_authenticated(user_credentials)
+
+            results = []
+            for i, company in enumerate(companies):
+                logger.info(
+                    f"Searching company {i + 1}/{len(companies)}: {company['company_name']}"
+                )
+                try:
+                    employees = self.employee_search_graph.execute(
+                        company["company_linkedin_url"],
+                        company["company_name"],
+                        company["limit"],
+                        self.browser_manager,
+                    )
+                    results.append(
+                        BatchEmployeeSearchResult(
+                            company_name=company["company_name"],
+                            company_linkedin_url=company["company_linkedin_url"],
+                            employees=employees,
+                            errors=[],
+                        )
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to search {company['company_name']}: {e}"
+                    )
+                    results.append(
+                        BatchEmployeeSearchResult(
+                            company_name=company["company_name"],
+                            company_linkedin_url=company["company_linkedin_url"],
+                            employees=[],
+                            errors=[str(e)],
+                        )
+                    )
+
+                # Delay between companies for anti-detection
+                if i < len(companies) - 1:
+                    delay = random.uniform(2, 5)
+                    logger.info(f"Waiting {delay:.1f}s before next company")
+                    time.sleep(delay)
+
+            return results
+
+        except Exception as e:
+            raise Exception(f"Batch employee search failed: {str(e)}")
 
         finally:
             if self.browser_manager:

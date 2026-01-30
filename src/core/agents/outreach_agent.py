@@ -66,7 +66,7 @@ class EmployeeOutreachAgent:
         return workflow.compile()
 
     def search_employees_node(self, state: OutreachAgentState) -> Dict[str, Any]:
-        """Search for employees at each filtered company via MCP."""
+        """Search for employees at all filtered companies via single batch MCP call."""
         trace_id = state.get("trace_id", str(uuid.uuid4()))
         agent_logger = get_core_agent_logger(trace_id)
 
@@ -76,48 +76,59 @@ class EmployeeOutreachAgent:
             mcp_client = LinkedInMCPClientSync()
             employees_per_company = self.config.outreach.employees_per_company
 
+            # Build batch request
+            companies_to_search = []
             for company in state["companies"]:
-                company_name = company.get("name", "Unknown")
                 linkedin_url = company.get("linkedin_url", "")
-
+                company_name = company.get("name", "Unknown")
                 if not linkedin_url:
                     agent_logger.warning(f"Skipping {company_name}: no linkedin_url")
                     continue
+                companies_to_search.append({
+                    "company_linkedin_url": linkedin_url,
+                    "company_name": company_name,
+                    "limit": employees_per_company,
+                })
 
-                try:
-                    agent_logger.info(
-                        f"Searching employees at {company_name}",
-                        company=company_name,
-                    )
+            if not companies_to_search:
+                return {
+                    **state,
+                    "employees_found": [],
+                    "current_status": "No companies with LinkedIn URLs to search",
+                }
 
-                    employees = mcp_client.search_employees(
-                        company_linkedin_url=linkedin_url,
-                        company_name=company_name,
-                        email=state["user_credentials"]["email"],
-                        password=state["user_credentials"]["password"],
-                        limit=employees_per_company,
-                        trace_id=trace_id,
-                    )
+            agent_logger.info(
+                f"Batch searching employees at {len(companies_to_search)} companies",
+            )
 
-                    for emp in employees:
-                        emp["company_name"] = company_name
-                    all_employees.extend(employees)
+            # Single MCP call for all companies (single browser session)
+            batch_results = mcp_client.search_employees_batch(
+                companies=companies_to_search,
+                email=state["user_credentials"]["email"],
+                password=state["user_credentials"]["password"],
+                trace_id=trace_id,
+            )
 
-                except Exception as e:
-                    error_msg = (
-                        f"Failed to search employees at {company_name}: {str(e)}"
-                    )
-                    agent_logger.error(error_msg)
-                    state["errors"] = state.get("errors", []) + [error_msg]
+            # Flatten results
+            for result in batch_results:
+                company_name = result.get("company_name", "Unknown")
+                for emp in result.get("employees", []):
+                    emp["company_name"] = company_name
+                all_employees.extend(result.get("employees", []))
+
+                for error in result.get("errors", []):
+                    state["errors"] = state.get("errors", []) + [
+                        f"{company_name}: {error}"
+                    ]
 
             return {
                 **state,
                 "employees_found": all_employees,
-                "current_status": f"Found {len(all_employees)} employees across {len(state['companies'])} companies",
+                "current_status": f"Found {len(all_employees)} employees across {len(companies_to_search)} companies",
             }
 
         except Exception as e:
-            error_msg = f"Employee search failed: {str(e)}"
+            error_msg = f"Batch employee search failed: {str(e)}"
             return {
                 **state,
                 "errors": state.get("errors", []) + [error_msg],

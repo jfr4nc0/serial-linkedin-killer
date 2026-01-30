@@ -207,6 +207,24 @@ class LinkedInMCPClient:
 
         return await self._call_tool("send_message", arguments)
 
+    async def search_employees_batch(
+        self,
+        companies: List[Dict[str, Any]],
+        email: str,
+        password: str,
+        trace_id: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Search employees across multiple companies in a single browser session."""
+        arguments = {
+            "companies": companies,
+            "email": email,
+            "password": password,
+        }
+        if trace_id:
+            arguments["trace_id"] = trace_id
+
+        return await self._call_tool("search_employees_batch", arguments)
+
     async def easy_apply_for_jobs(
         self,
         applications: List[ApplicationRequest],

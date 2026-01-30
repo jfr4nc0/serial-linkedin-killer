@@ -79,6 +79,23 @@ class LinkedInMCPClientSync:
 
         return asyncio.run(_send())
 
+    def search_employees_batch(
+        self,
+        companies: List[Dict[str, Any]],
+        email: str,
+        password: str,
+        trace_id: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Synchronous wrapper for search_employees_batch."""
+
+        async def _search():
+            async with self.client as client:
+                return await client.search_employees_batch(
+                    companies, email, password, trace_id
+                )
+
+        return asyncio.run(_search())
+
     def easy_apply_for_jobs(
         self,
         applications: List[ApplicationRequest],

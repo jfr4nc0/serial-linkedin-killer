@@ -250,6 +250,52 @@ def send_message(
     return result
 
 
+@mcp.tool
+def search_employees_batch(
+    companies: list[dict],
+    email: str,
+    password: str,
+    trace_id: str = None,
+) -> list[dict]:
+    """
+    Search employees across multiple companies in a single browser session.
+    Much more efficient than calling search_employees per company.
+
+    Args:
+        companies: List of dicts with company_linkedin_url, company_name, and limit
+        email: LinkedIn email for authentication
+        password: LinkedIn password for authentication
+        trace_id: Optional trace ID for correlation
+
+    Returns:
+        List of results per company with employees and errors
+    """
+    from src.linkedin_mcp.linkedin.utils.logging_config import get_mcp_logger
+
+    if trace_id:
+        logger = get_mcp_logger(trace_id)
+        logger.info(
+            f"Starting batch employee search: {len(companies)} companies",
+            companies_count=len(companies),
+            trace_id=trace_id,
+        )
+
+    user_credentials = {"email": email, "password": password}
+    result = employee_outreach_service.search_employees_batch(
+        companies, user_credentials
+    )
+
+    if trace_id:
+        total_employees = sum(len(r.get("employees", [])) for r in result)
+        logger.info(
+            f"Batch employee search completed: {total_employees} employees across {len(companies)} companies",
+            total_employees=total_employees,
+            trace_id=trace_id,
+        )
+
+    return result
+
+
 # Log registered tools
 log_mcp_tool_registration(
     [
@@ -265,6 +311,10 @@ log_mcp_tool_registration(
         {
             "name": "send_message",
             "description": "Send message or connection request to a LinkedIn user",
+        },
+        {
+            "name": "search_employees_batch",
+            "description": "Search employees across multiple companies in single browser session",
         },
     ]
 )

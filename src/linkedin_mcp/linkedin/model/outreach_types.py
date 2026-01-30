@@ -24,7 +24,7 @@ class EmployeeSearchState(TypedDict):
     company_name: str
     browser_manager: IBrowserManager
     collected_employees: List[EmployeeResult]
-    current_page: int
+    extracted_urls: set  # Track already-extracted profile URLs
     limit: int
     errors: List[str]
 
@@ -37,3 +37,16 @@ class MessageSendState(TypedDict):
     sent: bool
     method: str
     error: str
+
+
+class CompanySearchRequest(TypedDict):
+    company_linkedin_url: str
+    company_name: str
+    limit: int
+
+
+class BatchEmployeeSearchResult(TypedDict):
+    company_name: str
+    company_linkedin_url: str
+    employees: List[EmployeeResult]
+    errors: List[str]
