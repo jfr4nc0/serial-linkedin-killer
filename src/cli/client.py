@@ -96,9 +96,17 @@ class JobApplicationCLI:
             warmup: bool = typer.Option(
                 False, "--warmup/--no-warmup", help="Warm-up mode: cap at 10 messages"
             ),
+            total_limit: int = typer.Option(
+                None,
+                "--total-limit",
+                "-tl",
+                help="Max total employees to search across all companies",
+            ),
         ):
             """Run the employee outreach workflow."""
-            self._run_outreach_command(config_file or None, interactive, warmup)
+            self._run_outreach_command(
+                config_file or None, interactive, warmup, total_limit
+            )
 
         @self.app.command("import-dataset")
         def import_dataset(
@@ -486,6 +494,7 @@ class JobApplicationCLI:
         config_file: Optional[str],
         interactive: bool,
         warm_up: bool,
+        total_limit: Optional[int] = None,
     ):
         """Execute the two-phase outreach workflow: search/cluster → select groups → send."""
         try:
@@ -533,7 +542,7 @@ class JobApplicationCLI:
                     if selected:
                         filters["country"] = selected
 
-                sizes = filter_data["sizes"]
+                sizes = self._sort_size_intervals(filter_data["sizes"])
                 if sizes:
                     selected = self.ui.print_company_filter_menu("size", sizes)
                     if selected:
@@ -565,6 +574,11 @@ class JobApplicationCLI:
                 "filters": filters,
                 "credentials": {"email": email, "password": password},
             }
+            if total_limit is not None:
+                search_payload["total_limit"] = total_limit
+                self.ui.console.print(
+                    f"Total employee limit: [bold yellow]{total_limit}[/bold yellow]\n"
+                )
 
             from rich.live import Live
             from rich.spinner import Spinner
@@ -740,6 +754,22 @@ class JobApplicationCLI:
                 self.ui.console.print(f"Outreach failed: {str(e)}", style="red")
             logger.exception("Outreach workflow failed")
             sys.exit(1)
+
+    @staticmethod
+    def _sort_size_intervals(sizes: List[str]) -> List[str]:
+        """Sort company size intervals by their lower bound numerically.
+
+        Handles formats like "1-10", "11-50", "51-200", "10001+", "Self-employed".
+        """
+        import re
+
+        def sort_key(s: str) -> int:
+            match = re.match(r"(\d+)", s)
+            if match:
+                return int(match.group(1))
+            return float("inf")  # Non-numeric values go last
+
+        return sorted(sizes, key=sort_key)
 
     def run(self):
         """Run the CLI application."""

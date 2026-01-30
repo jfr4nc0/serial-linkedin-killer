@@ -84,11 +84,13 @@ class EmployeeOutreachAgent:
                 if not linkedin_url:
                     agent_logger.warning(f"Skipping {company_name}: no linkedin_url")
                     continue
-                companies_to_search.append({
-                    "company_linkedin_url": linkedin_url,
-                    "company_name": company_name,
-                    "limit": employees_per_company,
-                })
+                companies_to_search.append(
+                    {
+                        "company_linkedin_url": linkedin_url,
+                        "company_name": company_name,
+                        "limit": employees_per_company,
+                    }
+                )
 
             if not companies_to_search:
                 return {
@@ -106,6 +108,7 @@ class EmployeeOutreachAgent:
                 companies=companies_to_search,
                 email=state["user_credentials"]["email"],
                 password=state["user_credentials"]["password"],
+                total_limit=state.get("total_limit"),
                 trace_id=trace_id,
             )
 
@@ -318,6 +321,7 @@ class EmployeeOutreachAgent:
         self,
         companies: List[Dict[str, str]],
         user_credentials: Dict[str, str],
+        total_limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Execute Phase 1: search employees only.
 
@@ -340,6 +344,9 @@ class EmployeeOutreachAgent:
             companies_count=len(companies),
         )
 
+        if total_limit is not None:
+            agent_logger.info(f"Total employee limit: {total_limit}")
+
         initial_state = OutreachAgentState(
             companies=companies,
             company_filters={},
@@ -353,6 +360,7 @@ class EmployeeOutreachAgent:
             trace_id=trace_id,
             daily_message_limit=0,
             messages_sent_today=0,
+            total_limit=total_limit,
         )
 
         final_state = self._search_graph.invoke(initial_state)
@@ -410,6 +418,7 @@ class EmployeeOutreachAgent:
             trace_id=trace_id,
             daily_message_limit=daily_limit,
             messages_sent_today=0,
+            total_limit=None,
         )
 
         final_state = self._send_graph.invoke(initial_state)
@@ -466,6 +475,7 @@ class EmployeeOutreachAgent:
             trace_id=trace_id,
             daily_message_limit=self.config.outreach.daily_message_limit,
             messages_sent_today=0,
+            total_limit=None,
         )
 
         final_state = self._full_graph.invoke(initial_state)

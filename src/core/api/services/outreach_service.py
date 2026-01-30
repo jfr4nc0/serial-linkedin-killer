@@ -75,6 +75,7 @@ class OutreachService:
             employees = agent.run_search_only(
                 companies=companies,
                 user_credentials=request.credentials.model_dump(),
+                total_limit=request.total_limit,
             )
         finally:
             del agent

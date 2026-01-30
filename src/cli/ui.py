@@ -394,43 +394,121 @@ class TerminalUI:
         """Start timing the workflow."""
         self.start_time = time.time()
 
+    def _display_values_table(
+        self, column_name: str, values: List[str], offset: int = 0
+    ) -> None:
+        """Display a numbered table of values."""
+        table = Table(
+            title=f"Available {column_name.title()} values ({len(values)} total)",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("#", style="cyan", width=6)
+        table.add_column(column_name.title(), style="green")
+
+        for i, value in enumerate(values, offset + 1):
+            table.add_row(str(i), value)
+
+        self.console.print(table)
+
     def print_company_filter_menu(
         self, column_name: str, unique_values: List[str]
     ) -> List[str]:
         """Display unique values for a column and prompt user to select.
 
+        Supports:
+        - Numbers: "1,3,5" to select by index
+        - Search: any text to filter values by substring match
+        - 'all': select all / skip filter
+        - 'list': show full list again
+
         Returns list of selected values, or empty list for 'all'.
         """
-        table = Table(
-            title=f"Available {column_name.title()} values",
-            show_header=True,
-            header_style="bold magenta",
-        )
-        table.add_column("#", style="cyan", width=4)
-        table.add_column(column_name.title(), style="green")
-
-        for i, value in enumerate(unique_values, 1):
-            table.add_row(str(i), value)
-
-        self.console.print(table)
-        self.console.print()
-
-        selection = self.console.input(
-            f"Select {column_name} (comma-separated numbers, or 'all'): "
-        ).strip()
-
-        if not selection or selection.lower() == "all":
-            return []
-
         selected = []
-        for part in selection.split(","):
-            part = part.strip()
-            if part.isdigit():
-                idx = int(part) - 1
-                if 0 <= idx < len(unique_values):
-                    selected.append(unique_values[idx])
 
-        return selected
+        # Show initial list (truncated if too many)
+        if len(unique_values) > 30:
+            self._display_values_table(column_name, unique_values[:30])
+            self.console.print(
+                f"  ... and {len(unique_values) - 30} more. "
+                "Type to search or enter numbers.\n",
+                style="dim",
+            )
+        else:
+            self._display_values_table(column_name, unique_values)
+
+        self.console.print()
+        self.console.print(
+            f"  [dim]Enter numbers (1,3,5), search text to filter, "
+            f"'all' to skip, 'list' to show all, 'done' when finished[/dim]"
+        )
+
+        while True:
+            prompt = (
+                f"Select {column_name}"
+                + (f" [selected: {len(selected)}]" if selected else "")
+                + ": "
+            )
+            raw = self.console.input(prompt).strip()
+
+            if not raw or raw.lower() == "all":
+                return []
+
+            if raw.lower() == "done":
+                return selected
+
+            if raw.lower() == "list":
+                self._display_values_table(column_name, unique_values)
+                continue
+
+            # Check if input is numbers (comma-separated)
+            parts = raw.split(",")
+            all_numeric = all(p.strip().isdigit() for p in parts if p.strip())
+
+            if all_numeric and parts[0].strip():
+                for part in parts:
+                    part = part.strip()
+                    if part.isdigit():
+                        idx = int(part) - 1
+                        if 0 <= idx < len(unique_values):
+                            val = unique_values[idx]
+                            if val not in selected:
+                                selected.append(val)
+                                self.console.print(f"  + {val}", style="green")
+                            else:
+                                self.console.print(
+                                    f"  (already selected: {val})", style="dim"
+                                )
+                        else:
+                            self.console.print(f"  Invalid number: {part}", style="red")
+                continue
+
+            # Text search: filter values by substring
+            query = raw.lower()
+            matches = [
+                (i, v) for i, v in enumerate(unique_values) if query in v.lower()
+            ]
+
+            if not matches:
+                self.console.print(f"  No matches for '{raw}'", style="yellow")
+                continue
+
+            # Display matches with their original index
+            match_table = Table(
+                title=f"Matches for '{raw}'",
+                show_header=True,
+                header_style="bold magenta",
+            )
+            match_table.add_column("#", style="cyan", width=6)
+            match_table.add_column(column_name.title(), style="green")
+
+            for orig_idx, value in matches:
+                match_table.add_row(str(orig_idx + 1), value)
+
+            self.console.print(match_table)
+            self.console.print(
+                "  [dim]Enter numbers to select from above, or keep searching[/dim]"
+            )
 
     def print_filtered_companies_summary(
         self, companies: List[Dict[str, Any]], total: int

@@ -98,7 +98,9 @@ class EmployeeSearchGraph:
                 }
 
             cards = LinkedInEmployeeSelectors.CARD.find_elements(driver)
-            logger.info(f"Found {len(cards)} total cards, {len(extracted_urls)} already extracted")
+            logger.info(
+                f"Found {len(cards)} total cards, {len(extracted_urls)} already extracted"
+            )
 
             for card in cards:
                 if (
@@ -110,7 +112,9 @@ class EmployeeSearchGraph:
                 try:
                     # Extract profile URL first to check for duplicates
                     try:
-                        link_el = LinkedInEmployeeSelectors.PROFILE_URL.find_element(card)
+                        link_el = LinkedInEmployeeSelectors.PROFILE_URL.find_element(
+                            card
+                        )
                         profile_url = clean_profile_url(link_el.get_attribute("href"))
                     except SelectorFailure:
                         continue
@@ -179,7 +183,9 @@ class EmployeeSearchGraph:
     def _should_load_more(self, state: EmployeeSearchState) -> str:
         """Check if we need to load more results."""
         if len(state["collected_employees"]) >= state["limit"]:
-            logger.info(f"Limit reached: {len(state['collected_employees'])}/{state['limit']}")
+            logger.info(
+                f"Limit reached: {len(state['collected_employees'])}/{state['limit']}"
+            )
             return "finish"
 
         # Check if "Show more" button exists
@@ -211,7 +217,8 @@ class EmployeeSearchGraph:
             # Wait for new cards to appear
             try:
                 WebDriverWait(driver, 10).until(
-                    lambda d: len(LinkedInEmployeeSelectors.CARD.find_elements(d)) > cards_before
+                    lambda d: len(LinkedInEmployeeSelectors.CARD.find_elements(d))
+                    > cards_before
                 )
             except Exception:
                 logger.warning("No new cards loaded after clicking Show more")
@@ -233,9 +240,7 @@ class EmployeeSearchGraph:
         authenticated_browser_manager: IBrowserManager,
     ) -> List[EmployeeResult]:
         """Execute the employee search workflow with pre-authenticated browser."""
-        logger.info(
-            f"Starting employee search for {company_name} (limit: {limit})"
-        )
+        logger.info(f"Starting employee search for {company_name} (limit: {limit})")
 
         initial_state = EmployeeSearchState(
             company_linkedin_url=company_linkedin_url,
@@ -250,9 +255,7 @@ class EmployeeSearchGraph:
         result = self.graph.invoke(initial_state)
 
         if result.get("errors"):
-            logger.warning(
-                f"Employee search completed with errors: {result['errors']}"
-            )
+            logger.warning(f"Employee search completed with errors: {result['errors']}")
 
         logger.info(
             f"Employee search for {company_name} completed: "

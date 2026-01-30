@@ -27,3 +27,6 @@ class OutreachAgentState(TypedDict):
     trace_id: str
     daily_message_limit: int
     messages_sent_today: int
+
+    # Search limits
+    total_limit: Optional[int]  # Max total employees across all companies

@@ -80,9 +80,13 @@ class BrowserManagerService(IBrowserManager):
         # Set preferences directly on options (Selenium 4.x style)
         firefox_options.set_preference("browser.startup.homepage", "about:blank")
         firefox_options.set_preference("startup.homepage_welcome_url", "about:blank")
-        firefox_options.set_preference("startup.homepage_welcome_url.additional", "about:blank")
+        firefox_options.set_preference(
+            "startup.homepage_welcome_url.additional", "about:blank"
+        )
         firefox_options.set_preference("browser.download.folderList", 2)
-        firefox_options.set_preference("browser.download.manager.showWhenStarting", False)
+        firefox_options.set_preference(
+            "browser.download.manager.showWhenStarting", False
+        )
         firefox_options.set_preference("browser.download.dir", "/tmp")
         firefox_options.set_preference(
             "browser.helperApps.neverAsk.saveToDisk", "application/pdf"

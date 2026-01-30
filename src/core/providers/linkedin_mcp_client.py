@@ -212,6 +212,7 @@ class LinkedInMCPClient:
         companies: List[Dict[str, Any]],
         email: str,
         password: str,
+        total_limit: int = None,
         trace_id: str = None,
     ) -> List[Dict[str, Any]]:
         """Search employees across multiple companies in a single browser session."""
@@ -220,6 +221,8 @@ class LinkedInMCPClient:
             "email": email,
             "password": password,
         }
+        if total_limit is not None:
+            arguments["total_limit"] = total_limit
         if trace_id:
             arguments["trace_id"] = trace_id
 

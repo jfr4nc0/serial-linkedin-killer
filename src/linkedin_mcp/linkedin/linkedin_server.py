@@ -255,6 +255,7 @@ def search_employees_batch(
     companies: list[dict],
     email: str,
     password: str,
+    total_limit: int = None,
     trace_id: str = None,
 ) -> list[dict]:
     """
@@ -265,6 +266,7 @@ def search_employees_batch(
         companies: List of dicts with company_linkedin_url, company_name, and limit
         email: LinkedIn email for authentication
         password: LinkedIn password for authentication
+        total_limit: Optional max total employees across all companies
         trace_id: Optional trace ID for correlation
 
     Returns:
@@ -275,14 +277,15 @@ def search_employees_batch(
     if trace_id:
         logger = get_mcp_logger(trace_id)
         logger.info(
-            f"Starting batch employee search: {len(companies)} companies",
+            f"Starting batch employee search: {len(companies)} companies"
+            + (f", total_limit={total_limit}" if total_limit else ""),
             companies_count=len(companies),
             trace_id=trace_id,
         )
 
     user_credentials = {"email": email, "password": password}
     result = employee_outreach_service.search_employees_batch(
-        companies, user_credentials
+        companies, user_credentials, total_limit=total_limit
     )
 
     if trace_id:
@@ -333,7 +336,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LinkedIn MCP Server")
     parser.add_argument("--http", action="store_true", help="Run as HTTP server")
     parser.add_argument("--host", default=default_host, help="HTTP server host")
-    parser.add_argument("--port", type=int, default=default_port, help="HTTP server port")
+    parser.add_argument(
+        "--port", type=int, default=default_port, help="HTTP server port"
+    )
     args = parser.parse_args()
 
     if args.http:

@@ -208,7 +208,11 @@ def extract_name_from_element(name_element: Any) -> str:
     Tries aria-label first ("View {Name}'s profile"), then falls back to text.
     """
     aria_label = name_element.get_attribute("aria-label")
-    if aria_label and aria_label.startswith("View ") and aria_label.endswith("'s profile"):
+    if (
+        aria_label
+        and aria_label.startswith("View ")
+        and aria_label.endswith("'s profile")
+    ):
         return aria_label[5:-10].strip()
 
     # Fallback: get inner text

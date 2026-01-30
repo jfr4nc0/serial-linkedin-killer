@@ -14,11 +14,11 @@ from src.linkedin_mcp.linkedin.model.outreach_types import (
     EmployeeResult,
     MessageResult,
 )
-from src.linkedin_mcp.linkedin.utils.logging_config import get_mcp_logger
 from src.linkedin_mcp.linkedin.services.browser_manager_service import (
     BrowserManagerService as BrowserManager,
 )
 from src.linkedin_mcp.linkedin.services.linkedin_auth_service import LinkedInAuthService
+from src.linkedin_mcp.linkedin.utils.logging_config import get_mcp_logger
 
 
 class EmployeeOutreachService(IEmployeeOutreachService):
@@ -83,24 +83,48 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         self,
         companies: List[CompanySearchRequest],
         user_credentials: Dict[str, str],
+        total_limit: int = None,
     ) -> List[BatchEmployeeSearchResult]:
-        """Search employees across multiple companies with a SINGLE browser session."""
+        """Search employees across multiple companies with a SINGLE browser session.
+
+        Args:
+            companies: List of company search requests
+            user_credentials: LinkedIn credentials
+            total_limit: Optional max total employees across all companies.
+                         When set, stops searching once this many employees are collected.
+        """
         logger = get_mcp_logger()
         try:
             self._ensure_authenticated(user_credentials)
 
             results = []
+            total_collected = 0
             for i, company in enumerate(companies):
+                # Check total limit before searching next company
+                if total_limit is not None and total_collected >= total_limit:
+                    logger.info(
+                        f"Total limit reached ({total_collected}/{total_limit}), "
+                        f"skipping remaining {len(companies) - i} companies"
+                    )
+                    break
+
+                # Adjust per-company limit if total_limit would be exceeded
+                company_limit = company["limit"]
+                if total_limit is not None:
+                    company_limit = min(company_limit, total_limit - total_collected)
+
                 logger.info(
-                    f"Searching company {i + 1}/{len(companies)}: {company['company_name']}"
+                    f"Searching company {i + 1}/{len(companies)}: {company['company_name']} "
+                    f"(limit: {company_limit})"
                 )
                 try:
                     employees = self.employee_search_graph.execute(
                         company["company_linkedin_url"],
                         company["company_name"],
-                        company["limit"],
+                        company_limit,
                         self.browser_manager,
                     )
+                    total_collected += len(employees)
                     results.append(
                         BatchEmployeeSearchResult(
                             company_name=company["company_name"],
@@ -110,9 +134,7 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                         )
                     )
                 except Exception as e:
-                    logger.error(
-                        f"Failed to search {company['company_name']}: {e}"
-                    )
+                    logger.error(f"Failed to search {company['company_name']}: {e}")
                     results.append(
                         BatchEmployeeSearchResult(
                             company_name=company["company_name"],
