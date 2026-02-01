@@ -185,7 +185,8 @@ outreach:
   delay_between_messages_max: 120.0
 
 db:
-  path: "./data/agent.db"  # SQLite — auto-created on first run
+  url: "sqlite:///./data/agent.db"  # SQLAlchemy URL — auto-created on first run
+  company_url: "sqlite:///./data/companies.db"
 
 kafka:
   bootstrap_servers: "localhost:9092"
@@ -248,6 +249,17 @@ poetry install
 poetry run pytest tests/
 ```
 
+## Sequence Diagrams
+
+Detailed PlantUML sequence diagrams documenting the outreach workflow:
+
+### Full Workflow
+![Outreach Workflow Full](docs/diagrams/outreach_workflow_full.png)
+
+For more diagrams, see the `docs/diagrams` directory.
+
 ## License
 
-Educational and research purposes. Ensure compliance with LinkedIn's Terms of Service.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+**Disclaimer:** This software is provided for educational and research purposes. Users are responsible for ensuring compliance with LinkedIn's Terms of Service.

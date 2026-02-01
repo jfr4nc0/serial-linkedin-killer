@@ -1,0 +1,230 @@
+@startuml Outreach_Phase1_Search
+title Phase 1: Search & Cluster - Detailed Flow
+autonumber
+
+box "CLI Layer" #LightBlue
+    participant "CLI\nclient.py" as CLI
+end box
+
+box "Core Agent API" #LightGreen
+    participant "FastAPI\nController" as CTRL
+    participant "OutreachService" as SVC
+    participant "EmployeeOutreach\nAgent" as AGENT
+    participant "SessionStore" as SESS
+    participant "AgentDB" as DB
+    participant "CompanyDB" as CDB
+end box
+
+box "MCP Client" #LightYellow
+    participant "LinkedInMCP\nClientSync" as SYNC
+    participant "LinkedInMCP\nClient (Async)" as ASYNC
+end box
+
+box "LinkedIn MCP Server" #LightCoral
+    participant "MCP Server\nTools" as TOOLS
+    participant "EmployeeOutreach\nService" as EOS
+    participant "BrowserManager" as BM
+    participant "AuthGraph" as AUTH
+    participant "SearchGraph" as SEARCH
+end box
+
+== Request Initiation ==
+
+CLI -> CTRL: POST /api/outreach/search
+note right of CLI
+    OutreachSearchRequest:
+    - filters: {industry, country, size}
+    - credentials: {email, password}
+    - total_limit: int (optional)
+end note
+
+activate CTRL
+CTRL -> SVC: search_and_cluster(request)
+activate SVC
+
+== Company Filtering ==
+
+SVC -> SVC: trace_id = uuid()
+SVC -> CDB: filter_companies(filters)
+activate CDB
+note right of CDB
+    SELECT * FROM companies
+    WHERE industry IN (...)
+    AND country IN (...)
+    AND size IN (...)
+end note
+CDB --> SVC: [company dicts]
+deactivate CDB
+
+alt No companies match
+    SVC --> CTRL: OutreachSearchResponse(empty)
+    CTRL --> CLI: {session_id: "", role_groups: {}}
+end
+
+== Agent Search Phase ==
+
+SVC -> AGENT: EmployeeOutreachAgent(agent_db)
+SVC -> AGENT: run_search_only(companies, credentials, total_limit)
+activate AGENT
+
+AGENT -> AGENT: Initialize OutreachAgentState
+AGENT -> AGENT: Invoke _search_graph
+
+== Build Exclusion List ==
+
+AGENT -> DB: get_messaged_profile_urls()
+activate DB
+note right of DB
+    SELECT employee_profile_url
+    FROM messages_sent
+    WHERE success = 1
+end note
+DB --> AGENT: {messaged_urls}
+deactivate DB
+
+== MCP Batch Search ==
+
+AGENT -> AGENT: Build companies_to_search list
+AGENT -> SYNC: search_employees_batch(\ncompanies, exclude_profile_urls)
+activate SYNC
+
+SYNC -> SYNC: _get_loop() - get/create event loop
+SYNC -> ASYNC: run_coroutine_threadsafe()
+activate ASYNC
+
+ASYNC -> ASYNC: async with client context
+ASYNC -> TOOLS: HTTP POST /mcp\ncall_tool("search_employees_batch")
+activate TOOLS
+
+TOOLS -> EOS: search_employees_batch(\ncompanies, credentials,\nexclude_companies, exclude_profile_urls)
+activate EOS
+
+== Browser Authentication ==
+
+EOS -> BM: start_browser()
+activate BM
+BM -> BM: Initialize Selenium WebDriver
+BM --> EOS: driver ready
+deactivate BM
+
+EOS -> EOS: _ensure_authenticated()
+EOS -> AUTH: LinkedInAuthGraph.execute()
+activate AUTH
+
+AUTH -> AUTH: navigate_to_login\n(/login)
+AUTH -> AUTH: fill_credentials\n(email, password)
+AUTH -> AUTH: submit_login
+AUTH -> AUTH: verify_authentication
+
+alt CAPTCHA detected
+    AUTH -> AUTH: handle_captcha()\nWait for user input
+end
+
+AUTH --> EOS: AuthState{authenticated: true}
+deactivate AUTH
+
+== Employee Search Loop ==
+
+loop For each company in batch
+    EOS -> EOS: Check exclude_companies_set
+    alt Company excluded
+        EOS -> EOS: Skip to next
+    end
+
+    EOS -> EOS: Check total_limit
+    alt Limit reached
+        EOS -> EOS: Break loop
+    end
+
+    EOS -> SEARCH: EmployeeSearchGraph.execute(\ncompany_url, company_name, limit)
+    activate SEARCH
+
+    SEARCH -> SEARCH: navigate_to_people()\nGo to /company/name/people/
+
+    loop Extract employees
+        SEARCH -> SEARCH: extract_employees()\nParse DOM cards
+        SEARCH -> SEARCH: should_load_more()?
+
+        alt More results & limit not reached
+            SEARCH -> SEARCH: load_more()\nClick "Show more"
+        else
+            SEARCH -> SEARCH: Finish
+        end
+    end
+
+    SEARCH --> EOS: [EmployeeResult]\n{name, title, profile_url}
+    deactivate SEARCH
+
+    EOS -> EOS: Filter exclude_profile_urls
+    EOS -> EOS: total_collected += len(filtered)
+    EOS -> EOS: random_delay(0.5, 1) - anti-detection
+end
+
+EOS -> BM: close_browser()
+
+EOS --> TOOLS: BatchEmployeeSearchResult[]
+deactivate EOS
+
+TOOLS --> ASYNC: JSON response
+deactivate TOOLS
+
+ASYNC -> ASYNC: json.loads(content)
+ASYNC --> SYNC: batch_results
+deactivate ASYNC
+
+SYNC --> AGENT: batch_results
+deactivate SYNC
+
+== Flatten & Cluster ==
+
+AGENT -> AGENT: Flatten results\nAdd company_name to each employee
+AGENT --> SVC: employees_found
+deactivate AGENT
+
+SVC -> DB: Safety net filter\nwas_already_messaged() for each
+SVC -> SVC: cluster_employees_by_role(employees)
+note right of SVC
+    Uses LLM to classify titles:
+    Engineering, Sales, Marketing,
+    Finance, HR, Operations,
+    Executive, Other
+end note
+
+== Session Storage ==
+
+SVC -> SESS: create(employees, clustered, companies, trace_id)
+activate SESS
+
+SESS -> DB: save_session(session_id, data, ttl=3600)
+activate DB
+note right of DB
+    INSERT INTO sessions
+    (session_id, data, created_at, expires_at)
+end note
+DB --> SESS: OK
+deactivate DB
+
+SESS -> DB: cleanup_expired_sessions()
+SESS --> SVC: session_id
+deactivate SESS
+
+== Response ==
+
+SVC --> CTRL: OutreachSearchResponse
+deactivate SVC
+note right of SVC
+    - session_id: uuid
+    - role_groups: {role -> [employees]}
+    - total_employees: int
+    - companies_processed: int
+    - trace_id: uuid
+end note
+
+CTRL --> CLI: JSON response
+deactivate CTRL
+
+CLI -> CLI: Display role_groups table
+CLI -> CLI: User selects roles
+CLI -> CLI: User enters message templates
+
+@enduml
