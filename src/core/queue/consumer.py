@@ -60,9 +60,12 @@ class KafkaResultConsumer:
                 if msg is None:
                     continue
                 if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
+                    err = msg.error()
+                    if err.code() == KafkaError._PARTITION_EOF:
                         continue
-                    logger.error("Kafka consumer error", error=msg.error())
+                    logger.error(
+                        f"Kafka consumer error: {err.str()} (code={err.code()})"
+                    )
                     continue
 
                 msg_key = msg.key().decode() if msg.key() else None

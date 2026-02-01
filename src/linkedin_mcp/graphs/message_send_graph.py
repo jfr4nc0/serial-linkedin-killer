@@ -121,11 +121,18 @@ class MessageSendGraph:
         try:
             driver = state["browser_manager"].driver
 
-            # Click Message button
-            msg_button = driver.find_element(
-                By.XPATH, "//button[contains(@aria-label, 'Message')]"
+            # Click Message button — use JS click to bypass interactability issues
+            msg_button = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, "//button[contains(@aria-label, 'Message')]")
+                )
             )
-            msg_button.click()
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'});", msg_button
+            )
+            state["browser_manager"].random_delay(0.3, 0.5)
+            # Use JS click — bypasses Selenium's interactability check
+            driver.execute_script("arguments[0].click();", msg_button)
             state["browser_manager"].random_delay(1, 2)
 
             # Wait for message dialog
@@ -247,9 +254,9 @@ class MessageSendGraph:
         result = self.graph.invoke(initial_state)
 
         return MessageResult(
-            employee_profile_url=result["employee_profile_url"],
-            employee_name=result["employee_name"],
-            sent=result["sent"],
+            employee_profile_url=result.get("employee_profile_url", ""),
+            employee_name=result.get("employee_name", ""),
+            sent=result.get("sent", False),
             method=result.get("method", ""),
             error=result.get("error"),
         )
