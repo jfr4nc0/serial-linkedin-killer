@@ -1,6 +1,6 @@
 """Request/response schemas for the outreach workflow."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -39,6 +39,7 @@ class OutreachSearchRequest(BaseModel):
 
     filters: Dict[str, List[str]]
     credentials: CredentialsModel
+    total_limit: Optional[int] = None
 
 
 class OutreachSearchResponse(BaseModel):

@@ -1,5 +1,6 @@
 """Service layer for the employee outreach workflow."""
 
+import gc
 import threading
 import uuid
 from typing import Optional
@@ -7,6 +8,8 @@ from typing import Optional
 from loguru import logger
 
 from src.config.config_loader import load_config
+from src.core.agents.tools.company_db import CompanyDB
+from src.core.agents.tools.role_clustering import cluster_employees_by_role
 from src.core.api.schemas.outreach_schemas import (
     OutreachFiltersResponse,
     OutreachRunRequest,
@@ -17,9 +20,7 @@ from src.core.api.schemas.outreach_schemas import (
     OutreachSendResponse,
 )
 from src.core.api.services.session_store import SessionStore
-from src.core.kafka.producer import TOPIC_OUTREACH_RESULTS, KafkaResultProducer
-from src.core.tools.company_db import CompanyDB
-from src.core.tools.role_clustering import cluster_employees_by_role
+from src.core.queue.producer import TOPIC_OUTREACH_RESULTS, KafkaResultProducer
 
 
 class OutreachService:
@@ -36,7 +37,7 @@ class OutreachService:
 
     def get_filters(self) -> OutreachFiltersResponse:
         """Query the SQLite database for available filter values."""
-        with CompanyDB(self._config.outreach.db_path) as db:
+        with CompanyDB(self._config.db.company_url) as db:
             return OutreachFiltersResponse(
                 industries=db.get_unique_values("industry"),
                 countries=db.get_unique_values("country"),
@@ -56,7 +57,7 @@ class OutreachService:
         logger.info("Starting search and cluster", trace_id=trace_id)
 
         # Filter companies from DB
-        with CompanyDB(self._config.outreach.db_path) as db:
+        with CompanyDB(self._config.db.company_url) as db:
             companies = db.filter_companies(request.filters)
 
         if not companies:
@@ -71,13 +72,27 @@ class OutreachService:
         # Run search-only phase of the agent
         agent = None
         try:
-            agent = EmployeeOutreachAgent()
+            from src.core.api.app import get_agent_db
+
+            agent = EmployeeOutreachAgent(agent_db=get_agent_db())
             employees = agent.run_search_only(
                 companies=companies,
                 user_credentials=request.credentials.model_dump(),
+                total_limit=request.total_limit,
             )
         finally:
             del agent
+            gc.collect()
+
+        # Safety net: filter out any already-messaged employees
+        from src.core.api.app import get_agent_db
+
+        db = get_agent_db()
+        employees = [
+            emp
+            for emp in employees
+            if not db.was_already_messaged(emp.get("profile_url", ""))
+        ]
 
         # Cluster employees by role using LLM
         clustered = cluster_employees_by_role(employees)
@@ -121,6 +136,7 @@ class OutreachService:
             target=self._run_send,
             args=(task_id, request, session),
             name=f"outreach-send-{task_id[:8]}",
+            daemon=True,
         )
         thread.start()
 
@@ -180,7 +196,9 @@ class OutreachService:
             if request.warm_up:
                 daily_limit = 10
 
-            agent = EmployeeOutreachAgent()
+            from src.core.api.app import get_agent_db
+
+            agent = EmployeeOutreachAgent(agent_db=get_agent_db())
             state = agent.run_send(
                 employees_with_templates=employees_with_templates,
                 user_credentials=request.credentials.model_dump(),
@@ -222,6 +240,7 @@ class OutreachService:
             )
         finally:
             del agent
+            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)
 
@@ -235,6 +254,7 @@ class OutreachService:
             target=self._run,
             args=(task_id, request),
             name=f"outreach-{task_id[:8]}",
+            daemon=True,
         )
         thread.start()
 
@@ -248,7 +268,7 @@ class OutreachService:
         try:
             logger.info("Starting outreach workflow", task_id=task_id)
 
-            with CompanyDB(self._config.outreach.db_path) as db:
+            with CompanyDB(self._config.db.company_url) as db:
                 companies = db.filter_companies(request.filters)
 
             if not companies:
@@ -267,7 +287,9 @@ class OutreachService:
             if request.warm_up:
                 self._config.outreach.daily_message_limit = 10
 
-            agent = EmployeeOutreachAgent()
+            from src.core.api.app import get_agent_db
+
+            agent = EmployeeOutreachAgent(agent_db=get_agent_db())
             credentials = request.credentials.model_dump()
 
             state = agent.run(
@@ -300,5 +322,6 @@ class OutreachService:
             )
         finally:
             del agent
+            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)

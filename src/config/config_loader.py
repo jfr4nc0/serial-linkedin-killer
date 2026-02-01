@@ -29,6 +29,8 @@ class BrowserConfig(BaseModel):
     headless: bool = False
     use_undetected: bool = True
     browser_type: str = "chrome"
+    chrome_version: Optional[int] = None  # Force specific ChromeDriver version
+    chrome_binary_path: Optional[str] = None  # Path to Chrome binary
 
 
 class OutreachFilters(BaseModel):
@@ -62,6 +64,11 @@ class APIConfig(BaseModel):
     port: int = 8080
 
 
+class DBConfig(BaseModel):
+    url: str = "sqlite:///./data/agent.db"
+    company_url: str = "sqlite:///./data/companies.db"
+
+
 class ObservabilityConfig(BaseModel):
     langfuse_enabled: bool = False
     log_level: str = "INFO"
@@ -76,10 +83,12 @@ class AgentConfig(BaseModel):
     cv: CVConfig = CVConfig()
     kafka: KafkaConfig = KafkaConfig()
     api: APIConfig = APIConfig()
+    db: DBConfig = DBConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "agent.yaml"
+_cached_config: Optional["AgentConfig"] = None
 
 
 def load_config(config_path: Optional[str] = None) -> AgentConfig:
@@ -87,6 +96,11 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
 
     Priority: env vars > YAML file > defaults.
     """
+    global _cached_config
+
+    if _cached_config is not None and config_path is None:
+        return _cached_config
+
     path = Path(config_path) if config_path else _DEFAULT_CONFIG_PATH
 
     data: Dict = {}
@@ -108,6 +122,8 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
         "kafka.bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
         "api.host": os.getenv("API_HOST"),
         "api.port": os.getenv("API_PORT"),
+        "db.url": os.getenv("DATABASE_URL"),
+        "db.company_url": os.getenv("COMPANY_DATABASE_URL"),
         "observability.log_level": os.getenv("LOG_LEVEL"),
     }
 
@@ -125,5 +141,8 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
                 else value
             )
             setattr(obj, field, cast_value)
+
+    if config_path is None:
+        _cached_config = config
 
     return config

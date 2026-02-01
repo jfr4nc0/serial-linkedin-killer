@@ -5,6 +5,9 @@ from typing import Any, Dict, List
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
+from src.core.agents.tools.cv_analysis_tools import analyze_cv_structure, read_pdf_cv
+from src.core.agents.tools.cv_loader import extract_cv_analysis, load_cv_data
+from src.core.db.agent_db import AgentDB
 from src.core.model.application_request import ApplicationRequest
 from src.core.model.job_application_agent_state import JobApplicationAgentState
 from src.core.model.job_result import JobResult
@@ -12,8 +15,6 @@ from src.core.model.job_search_request import JobSearchRequest
 from src.core.observability.langfuse_config import get_langfuse_config_for_langgraph
 from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
 from src.core.providers.llm_client import get_llm_client
-from src.core.tools.cv_loader import extract_cv_analysis, load_cv_data
-from src.core.tools.tools import analyze_cv_structure, read_pdf_cv
 from src.core.utils.logging_config import get_core_agent_logger
 
 
@@ -26,9 +27,14 @@ class JobApplicationAgent:
     4. Apply to filtered jobs
     """
 
-    def __init__(self, server_host: str = None, server_port: int = None):
+    def __init__(
+        self, server_host: str = None, server_port: int = None, agent_db: AgentDB = None
+    ):
         self.server_host = server_host
         self.server_port = server_port
+        from src.config.config_loader import load_config
+
+        self._db = agent_db or AgentDB(load_config().db.url)
         self.graph = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
@@ -200,13 +206,15 @@ class JobApplicationAgent:
             agent_logger.info(
                 "Starting job applications", jobs_count=len(state["filtered_jobs"])
             )
-            # Prepare application requests with salary from original search criteria
+            # Prepare application requests, skipping already-applied jobs
             applications = []
             for job in state["filtered_jobs"]:
-                # Find the salary from the original search request
-                # For simplicity, use the first search's salary (could be enhanced)
-                monthly_salary = state["job_searches"][0]["monthly_salary"]
+                job_id = str(job["id_job"])
+                if self._db.was_already_applied(job_id):
+                    agent_logger.info(f"Skipping job {job_id}: already applied")
+                    continue
 
+                monthly_salary = state["job_searches"][0]["monthly_salary"]
                 applications.append(
                     ApplicationRequest(
                         job_id=job["id_job"], monthly_salary=monthly_salary
@@ -233,6 +241,14 @@ class JobApplicationAgent:
                 password=state["user_credentials"]["password"],
                 trace_id=trace_id,  # Pass trace_id to MCP
             )
+
+            # Persist results
+            for result in application_results:
+                self._db.record_application(
+                    str(result["id_job"]),
+                    result["success"],
+                    result.get("error"),
+                )
 
             successful_applications = sum(
                 1 for result in application_results if result["success"]
@@ -274,11 +290,6 @@ class JobApplicationAgent:
         """
         # Generate single trace_id for this entire agent run
         trace_id = str(uuid.uuid4())
-
-        # Configure logging with this trace_id
-        from src.core.utils.logging_config import configure_core_agent_logging
-
-        configure_core_agent_logging(default_trace_id=trace_id)
 
         # Get logger for this run
         agent_logger = get_core_agent_logger(trace_id)

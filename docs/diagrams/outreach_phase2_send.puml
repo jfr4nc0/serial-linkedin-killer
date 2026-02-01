@@ -1,0 +1,307 @@
+@startuml Outreach_Phase2_Send
+title Phase 2: Send Messages - Detailed Flow
+autonumber
+
+box "CLI Layer" #LightBlue
+    participant "CLI\nclient.py" as CLI
+    participant "KafkaResult\nConsumer" as CONSUMER
+end box
+
+box "Core Agent API" #LightGreen
+    participant "FastAPI\nController" as CTRL
+    participant "OutreachService" as SVC
+    participant "Background\nThread" as THREAD
+    participant "EmployeeOutreach\nAgent" as AGENT
+    participant "SessionStore" as SESS
+    participant "AgentDB" as DB
+    participant "KafkaResult\nProducer" as PRODUCER
+end box
+
+box "MCP Client" #LightYellow
+    participant "LinkedInMCP\nClientSync" as SYNC
+end box
+
+box "LinkedIn MCP Server" #LightCoral
+    participant "MCP Server" as MCP
+    participant "MessageSend\nGraph" as MSG
+    participant "BrowserManager" as BM
+end box
+
+== Request Initiation ==
+
+CLI -> CTRL: POST /api/outreach/send
+note right of CLI
+    OutreachSendRequest:
+    - session_id: uuid
+    - selected_groups: {
+        "Engineering": {
+          enabled: true,
+          message_template: "Hi {employee_name}...",
+          template_variables: {my_name: "John"}
+        },
+        ...
+      }
+    - credentials: {email, password}
+    - warm_up: bool
+end note
+
+activate CTRL
+CTRL -> SVC: submit_send(request)
+activate SVC
+
+== Session Retrieval ==
+
+SVC -> SESS: get(session_id)
+activate SESS
+SESS -> DB: get_session(session_id)
+activate DB
+
+DB -> DB: Check expires_at > now
+alt Session expired
+    DB -> DB: DELETE session
+    DB --> SESS: None
+    SESS --> SVC: None
+    SVC --> CTRL: 404 Session not found
+end
+
+DB --> SESS: session data
+deactivate DB
+SESS --> SVC: {employees, clustered, companies, trace_id}
+deactivate SESS
+
+== Async Task Setup ==
+
+SVC -> SVC: task_id = uuid()
+SVC -> SVC: daily_limit = config or 10 (if warm_up)
+
+SVC -> THREAD: spawn daemon thread\n_run_send(task_id, request, session)
+note over THREAD: Thread starts immediately\nbut runs in background
+
+SVC -> SESS: delete(session_id)
+note right: Session data passed to thread,\nno longer needed in store
+
+SVC --> CTRL: task_id
+deactivate SVC
+
+CTRL --> CLI: {task_id}
+deactivate CTRL
+
+== Parallel Execution ==
+
+par Background Thread Execution
+    activate THREAD #LightBlue
+    note over THREAD: _run_send() executing
+
+    == Build Employee List ==
+
+    THREAD -> THREAD: employees_with_templates = []
+    loop For each role in selected_groups
+        alt role.enabled == true
+            THREAD -> THREAD: Get role_employees from clustered
+            loop For each employee
+                THREAD -> THREAD: Attach _template, _template_vars, _role
+                THREAD -> THREAD: Add to employees_with_templates
+            end
+        end
+    end
+
+    alt No employees selected
+        THREAD -> PRODUCER: publish(OutreachSendResponse)\n{status: "no employees", results: []}
+        THREAD -> THREAD: return
+    end
+
+    == Agent Send Phase ==
+
+    THREAD -> AGENT: run_send(employees_with_templates,\ncredentials, daily_limit, trace_id)
+    activate AGENT
+
+    AGENT -> AGENT: Initialize OutreachAgentState
+    AGENT -> AGENT: Invoke _send_graph
+
+    AGENT -> DB: get_daily_quota()
+    DB --> AGENT: messages_sent_today
+
+    == Message Loop ==
+
+    loop For each employee in list
+        alt messages_sent >= daily_limit
+            AGENT -> AGENT: Log "Daily limit reached"
+            AGENT -> AGENT: Break loop
+        end
+
+        AGENT -> DB: was_already_messaged(profile_url)?
+        DB --> AGENT: already_messaged
+
+        alt already_messaged == true
+            AGENT -> AGENT: Log "Skipping: already messaged"
+            AGENT -> AGENT: Continue to next
+        end
+
+        == Template Rendering ==
+
+        AGENT -> AGENT: render_template(template, variables)
+        note right of AGENT
+            Variables:
+            - employee_name (first name)
+            - employee_full_name
+            - company_name
+            - employee_title
+            - my_name, my_role (static)
+        end note
+
+        == MCP Send Message ==
+
+        AGENT -> SYNC: send_message(\nprofile_url, name, message,\ncredentials, trace_id)
+        activate SYNC
+
+        SYNC -> MCP: HTTP POST /mcp\ncall_tool("send_message")
+        activate MCP
+
+        MCP -> MCP: _ensure_authenticated()
+        MCP -> BM: start_browser() if needed
+
+        MCP -> MSG: MessageSendGraph.execute()
+        activate MSG
+
+        MSG -> MSG: navigate_to_profile(url)
+        MSG -> MSG: Wait for profile load
+
+        MSG -> MSG: detect_action()
+        note right of MSG
+            Check for:
+            1. Message button
+            2. Connect button
+            3. More dropdown → Connect
+        end note
+
+        alt Message button found
+            MSG -> MSG: send_direct_message()
+            MSG -> MSG: Click Message button (JS click)
+            MSG -> MSG: Wait for dialog
+            MSG -> MSG: Type message in textbox
+            MSG -> MSG: Click Send button
+            MSG --> MCP: {sent: true, method: "direct_message"}
+
+        else Connect button found
+            MSG -> MSG: send_connection_request()
+            MSG -> MSG: Click Connect button
+            MSG -> MSG: Click "Add a note"
+            MSG -> MSG: Type note (300 char max)
+            MSG -> MSG: Click Send
+            MSG --> MCP: {sent: true, method: "connection_request"}
+
+        else No action available
+            MSG --> MCP: {sent: false, error: "No button found"}
+        end
+        deactivate MSG
+
+        MCP -> BM: close_browser()
+        MCP --> SYNC: MessageResult
+        deactivate MCP
+
+        SYNC --> AGENT: result
+        deactivate SYNC
+
+        == Record Result ==
+
+        AGENT -> DB: record_message(\nprofile_url, name, sent,\nmethod, error)
+        note right of DB
+            INSERT INTO messages_sent
+            (employee_profile_url, employee_name,
+             sent_at, success, method, error)
+        end note
+
+        alt sent == true
+            AGENT -> DB: increment_daily_quota()
+            DB --> AGENT: new_count
+        end
+
+        AGENT -> AGENT: Add result to message_results
+    end
+
+    AGENT --> THREAD: {message_results,\nmessages_sent_today,\ncurrent_status}
+    deactivate AGENT
+
+    == Build Response ==
+
+    THREAD -> THREAD: Build results_by_role
+    note right of THREAD
+        {
+          "Engineering": {sent: 5, failed: 1},
+          "Sales": {sent: 3, failed: 0},
+          ...
+        }
+    end note
+
+    THREAD -> THREAD: Create OutreachSendResponse
+
+    == Publish to Kafka ==
+
+    THREAD -> PRODUCER: publish(\nTOPIC_OUTREACH_RESULTS,\ntask_id,\nresponse)
+    activate PRODUCER
+
+    PRODUCER -> PRODUCER: Serialize to JSON
+    PRODUCER -> PRODUCER: produce(topic, key=task_id, value=json)
+    PRODUCER -> PRODUCER: flush()
+
+    note right of PRODUCER
+        Kafka Message:
+        - Topic: outreach-results
+        - Key: task_id
+        - Value: OutreachSendResponse JSON
+    end note
+
+    PRODUCER --> THREAD: delivery confirmed
+    deactivate PRODUCER
+
+    deactivate THREAD
+
+else CLI Kafka Consumer
+    CLI -> CONSUMER: consume(topic, task_id,\nOutreachSendResponse, timeout=600)
+    activate CONSUMER
+
+    CONSUMER -> CONSUMER: subscribe([topic])
+    CONSUMER -> CONSUMER: Log "Waiting for results"
+
+    loop Poll until timeout
+        CONSUMER -> CONSUMER: poll(timeout=1.0)
+
+        alt Message received
+            CONSUMER -> CONSUMER: Check msg.key() == task_id
+
+            alt Key matches
+                CONSUMER -> CONSUMER: Deserialize JSON
+                CONSUMER -> CONSUMER: Create OutreachSendResponse
+                CONSUMER --> CLI: response
+            else Key doesn't match
+                CONSUMER -> CONSUMER: Continue polling
+            end
+
+        else No message
+            CONSUMER -> CONSUMER: Continue polling
+        end
+
+        alt Timeout reached
+            CONSUMER -> CONSUMER: Log "Consumer timed out"
+            CONSUMER --> CLI: None
+        end
+    end
+
+    CONSUMER -> CONSUMER: close()
+    deactivate CONSUMER
+
+    == Display Results ==
+
+    CLI -> CLI: Display results_by_role table
+    note right of CLI
+        Role       | Sent | Failed
+        -----------|------|-------
+        Engineering|   5  |   1
+        Sales      |   3  |   0
+    end note
+
+    CLI -> CLI: Print summary
+    CLI -> CLI: Save detailed results to file
+end
+
+@enduml

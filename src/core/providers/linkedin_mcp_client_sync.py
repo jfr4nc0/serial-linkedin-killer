@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from typing import Any, Dict, List, Optional, Union
 
 from src.core.model import ApplicationRequest, ApplicationResult, CVAnalysis, JobResult
@@ -8,13 +9,36 @@ from src.core.providers.linkedin_mcp_client import LinkedInMCPClient
 class LinkedInMCPClientSync:
     """
     Synchronous wrapper for the LinkedInMCPClient.
-    Handles async/await internally for easier integration.
+    Uses a single persistent event loop in a background thread
+    to avoid event loop churn from asyncio.run().
     """
 
+    _loop: asyncio.AbstractEventLoop = None
+    _thread: threading.Thread = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def _get_loop(cls) -> asyncio.AbstractEventLoop:
+        """Get or create a persistent event loop running in a daemon thread."""
+        with cls._lock:
+            if cls._loop is None or cls._loop.is_closed():
+                cls._loop = asyncio.new_event_loop()
+                cls._thread = threading.Thread(
+                    target=cls._loop.run_forever,
+                    daemon=True,
+                    name="mcp-event-loop",
+                )
+                cls._thread.start()
+            return cls._loop
+
     def __init__(self, server_host: str = None, server_port: int = None):
-        # For MCP, we use stdio transport with server command
-        # server_host and server_port are kept for backward compatibility but not used
         self.client = LinkedInMCPClient()
+
+    def _run(self, coro):
+        """Run a coroutine on the persistent event loop and wait for the result."""
+        loop = self._get_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result()
 
     def search_jobs(
         self,
@@ -34,7 +58,7 @@ class LinkedInMCPClientSync:
                     job_title, location, easy_apply, email, password, limit, trace_id
                 )
 
-        return asyncio.run(_search())
+        return self._run(_search())
 
     def search_employees(
         self,
@@ -53,7 +77,7 @@ class LinkedInMCPClientSync:
                     company_linkedin_url, company_name, email, password, limit, trace_id
                 )
 
-        return asyncio.run(_search())
+        return self._run(_search())
 
     def send_message(
         self,
@@ -77,7 +101,33 @@ class LinkedInMCPClientSync:
                     trace_id,
                 )
 
-        return asyncio.run(_send())
+        return self._run(_send())
+
+    def search_employees_batch(
+        self,
+        companies: List[Dict[str, Any]],
+        email: str,
+        password: str,
+        total_limit: int = None,
+        trace_id: str = None,
+        exclude_companies: List[str] = None,
+        exclude_profile_urls: List[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Synchronous wrapper for search_employees_batch."""
+
+        async def _search():
+            async with self.client as client:
+                return await client.search_employees_batch(
+                    companies,
+                    email,
+                    password,
+                    total_limit,
+                    trace_id,
+                    exclude_companies=exclude_companies,
+                    exclude_profile_urls=exclude_profile_urls,
+                )
+
+        return self._run(_search())
 
     def easy_apply_for_jobs(
         self,
@@ -95,4 +145,4 @@ class LinkedInMCPClientSync:
                     applications, cv_analysis, email, password, trace_id
                 )
 
-        return asyncio.run(_apply())
+        return self._run(_apply())

@@ -3,24 +3,32 @@
     "label": "Python Active File",
     "adapter": "Debugpy",
     "program": "$ZED_FILE",
-    "request": "launch"
+    "request": "launch",
   },
   {
     "label": "Core Agent API",
     "adapter": "Debugpy",
     "module": "uvicorn",
     "request": "launch",
-    "args": ["src.core.api.app:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],
+    "args": [
+      "src.core.api.app:app",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8080",
+      "--reload",
+    ],
     "cwd": "$ZED_WORKTREE_ROOT",
-    "envFile": "$ZED_WORKTREE_ROOT/.env"
+    "envFile": "$ZED_WORKTREE_ROOT/.env",
   },
   {
     "label": "LinkedIn MCP Server",
     "adapter": "Debugpy",
-    "module": "src.linkedin_mcp.linkedin.linkedin_server",
+    "module": "src.linkedin_mcp.linkedin_server",
     "request": "launch",
+    //"args": ["--http"],
     "cwd": "$ZED_WORKTREE_ROOT",
-    "envFile": "$ZED_WORKTREE_ROOT/.env"
+    "envFile": "$ZED_WORKTREE_ROOT/.env",
   },
   {
     "label": "CLI - Outreach Interactive",
@@ -29,7 +37,7 @@
     "request": "launch",
     "args": ["outreach", "--interactive"],
     "cwd": "$ZED_WORKTREE_ROOT",
-    "envFile": "$ZED_WORKTREE_ROOT/.env"
+    "envFile": "$ZED_WORKTREE_ROOT/.env",
   },
   {
     "label": "CLI - Job Apply",
@@ -38,7 +46,7 @@
     "request": "launch",
     "args": ["run"],
     "cwd": "$ZED_WORKTREE_ROOT",
-    "envFile": "$ZED_WORKTREE_ROOT/.env"
+    "envFile": "$ZED_WORKTREE_ROOT/.env",
   },
   {
     "label": "CLI - Import Dataset",
@@ -47,7 +55,7 @@
     "request": "launch",
     "args": ["import-dataset"],
     "cwd": "$ZED_WORKTREE_ROOT",
-    "envFile": "$ZED_WORKTREE_ROOT/.env"
+    "envFile": "$ZED_WORKTREE_ROOT/.env",
   },
   {
     "label": "Tests",
@@ -55,6 +63,6 @@
     "module": "pytest",
     "request": "launch",
     "args": ["tests/", "-v"],
-    "cwd": "$ZED_WORKTREE_ROOT"
-  }
+    "cwd": "$ZED_WORKTREE_ROOT",
+  },
 ]

@@ -1,0 +1,169 @@
+@startuml Outreach_Workflow_Full
+title Employee Outreach Workflow - Complete End-to-End Flow
+autonumber
+
+participant "CLI" as CLI
+participant "FastAPI\nController" as CTRL
+participant "OutreachService" as SVC
+participant "EmployeeOutreach\nAgent" as AGENT
+participant "LinkedInMCP\nClientSync" as MCP_CLIENT
+participant "LinkedIn MCP\nServer" as MCP_SERVER
+participant "Browser\nGraphs" as GRAPHS
+participant "AgentDB" as DB
+participant "SessionStore" as SESS
+participant "Kafka" as KAFKA
+
+== PHASE 1: SEARCH & CLUSTER (Synchronous) ==
+
+CLI -> CTRL: POST /api/outreach/search\n{filters, credentials, total_limit}
+activate CTRL
+
+CTRL -> SVC: search_and_cluster(request)
+activate SVC
+
+SVC -> DB: CompanyDB.filter_companies(filters)
+DB --> SVC: [company dicts]
+
+SVC -> AGENT: run_search_only(companies, credentials)
+activate AGENT
+
+AGENT -> DB: get_messaged_profile_urls()
+DB --> AGENT: {messaged URLs}
+
+AGENT -> MCP_CLIENT: search_employees_batch(\ncompanies, exclude_profile_urls)
+activate MCP_CLIENT
+
+MCP_CLIENT -> MCP_SERVER: HTTP POST /mcp\ncall_tool("search_employees_batch")
+activate MCP_SERVER
+
+MCP_SERVER -> MCP_SERVER: _ensure_authenticated()
+MCP_SERVER -> GRAPHS: LinkedInAuthGraph.execute()
+GRAPHS --> MCP_SERVER: authenticated
+
+loop For each company
+    MCP_SERVER -> GRAPHS: EmployeeSearchGraph.execute()
+    GRAPHS --> MCP_SERVER: [employees]
+    MCP_SERVER -> MCP_SERVER: Filter exclude_profile_urls
+end
+
+MCP_SERVER -> MCP_SERVER: close_browser()
+MCP_SERVER --> MCP_CLIENT: BatchEmployeeSearchResult[]
+deactivate MCP_SERVER
+
+MCP_CLIENT --> AGENT: batch_results
+deactivate MCP_CLIENT
+
+AGENT -> AGENT: Flatten results, add company_name
+AGENT --> SVC: employees_found
+deactivate AGENT
+
+SVC -> DB: Filter already-messaged (safety net)
+SVC -> SVC: cluster_employees_by_role(employees)
+
+SVC -> SESS: create(employees, clustered, companies)
+SESS -> DB: save_session(session_id, data, ttl=3600)
+SESS --> SVC: session_id
+
+SVC --> CTRL: OutreachSearchResponse\n{session_id, role_groups, total_employees}
+deactivate SVC
+
+CTRL --> CLI: JSON response
+deactivate CTRL
+
+CLI -> CLI: Display role_groups\nUser selects roles & templates
+
+== PHASE 2: SEND MESSAGES (Async via Kafka) ==
+
+CLI -> CTRL: POST /api/outreach/send\n{session_id, selected_groups, credentials}
+activate CTRL
+
+CTRL -> SVC: submit_send(request)
+activate SVC
+
+SVC -> SESS: get(session_id)
+SESS -> DB: get_session(session_id)
+SESS --> SVC: session data
+
+SVC -> SVC: Generate task_id
+SVC -> SVC: Spawn thread: _run_send()
+SVC -> SESS: delete(session_id)
+
+SVC --> CTRL: task_id
+deactivate CTRL
+
+CTRL --> CLI: {task_id}
+
+activate SVC #LightBlue
+note over SVC: Background Thread
+
+SVC -> SVC: Build employees_with_templates\n(attach _template, _role)
+
+SVC -> AGENT: run_send(employees_with_templates,\ncredentials, daily_limit)
+activate AGENT
+
+loop For each employee
+    AGENT -> DB: was_already_messaged(url)?
+    DB --> AGENT: bool
+
+    alt Not already messaged
+        AGENT -> AGENT: render_template(template, vars)
+
+        AGENT -> MCP_CLIENT: send_message(url, name, message)
+        activate MCP_CLIENT
+
+        MCP_CLIENT -> MCP_SERVER: call_tool("send_message")
+        activate MCP_SERVER
+
+        MCP_SERVER -> GRAPHS: MessageSendGraph.execute()
+        activate GRAPHS
+        GRAPHS -> GRAPHS: navigate_to_profile
+        GRAPHS -> GRAPHS: detect_action (Message/Connect)
+        alt Message button available
+            GRAPHS -> GRAPHS: send_direct_message()
+        else Connect only
+            GRAPHS -> GRAPHS: send_connection_request()
+        end
+        GRAPHS --> MCP_SERVER: MessageResult
+        deactivate GRAPHS
+
+        MCP_SERVER --> MCP_CLIENT: {sent, method, error}
+        deactivate MCP_SERVER
+
+        MCP_CLIENT --> AGENT: result
+        deactivate MCP_CLIENT
+
+        AGENT -> DB: record_message(url, success, method)
+
+        alt sent == true
+            AGENT -> DB: increment_daily_quota()
+        end
+    end
+
+    alt messages_sent >= daily_limit
+        AGENT -> AGENT: Break loop
+    end
+end
+
+AGENT --> SVC: {message_results, messages_sent_today}
+deactivate AGENT
+
+SVC -> SVC: Build results_by_role
+SVC -> KAFKA: publish(TOPIC_OUTREACH_RESULTS,\ntask_id, OutreachSendResponse)
+
+deactivate SVC
+
+par CLI Kafka Consumer
+    CLI -> KAFKA: consume(task_id, timeout=600s)
+    activate KAFKA
+
+    loop Poll for task_id
+        KAFKA -> KAFKA: Check message key == task_id
+    end
+
+    KAFKA --> CLI: OutreachSendResponse
+    deactivate KAFKA
+
+    CLI -> CLI: Display results_by_role\nPrint summary
+end
+
+@enduml

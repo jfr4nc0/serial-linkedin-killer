@@ -96,9 +96,17 @@ class JobApplicationCLI:
             warmup: bool = typer.Option(
                 False, "--warmup/--no-warmup", help="Warm-up mode: cap at 10 messages"
             ),
+            total_limit: int = typer.Option(
+                None,
+                "--total-limit",
+                "-tl",
+                help="Max total employees to search across all companies",
+            ),
         ):
             """Run the employee outreach workflow."""
-            self._run_outreach_command(config_file or None, interactive, warmup)
+            self._run_outreach_command(
+                config_file or None, interactive, warmup, total_limit
+            )
 
         @self.app.command("import-dataset")
         def import_dataset(
@@ -115,19 +123,19 @@ class JobApplicationCLI:
     def _import_dataset_command(self, csv_path: Optional[str], db_path: Optional[str]):
         """Import the company CSV into SQLite."""
         from src.config.config_loader import load_config
-        from src.core.tools.company_db import CompanyDB
+        from src.core.agents.tools.company_db import CompanyDB
 
         self.ui = TerminalUI("rich")
         config = load_config()
 
         csv_path = csv_path or config.outreach.dataset_path
-        db_path = db_path or config.outreach.db_path
+        db_url = db_path or config.db.company_url
 
         self.ui.console.print(
-            f"Importing [bold]{csv_path}[/bold] into [bold]{db_path}[/bold]..."
+            f"Importing [bold]{csv_path}[/bold] into [bold]{db_url}[/bold]..."
         )
 
-        with CompanyDB(db_path) as db:
+        with CompanyDB(db_url) as db:
             total = db.import_csv(
                 csv_path,
                 on_progress=lambda n: self.ui.console.print(
@@ -217,8 +225,8 @@ class JobApplicationCLI:
             from rich.text import Text
 
             from src.core.api.schemas.job_schemas import JobApplyResponse
-            from src.core.kafka.consumer import KafkaResultConsumer
-            from src.core.kafka.producer import TOPIC_JOB_RESULTS
+            from src.core.queue.consumer import KafkaResultConsumer
+            from src.core.queue.producer import TOPIC_JOB_RESULTS
 
             consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
 
@@ -486,6 +494,7 @@ class JobApplicationCLI:
         config_file: Optional[str],
         interactive: bool,
         warm_up: bool,
+        total_limit: Optional[int] = None,
     ):
         """Execute the two-phase outreach workflow: search/cluster → select groups → send."""
         try:
@@ -533,11 +542,19 @@ class JobApplicationCLI:
                     if selected:
                         filters["country"] = selected
 
-                sizes = filter_data["sizes"]
+                sizes = self._sort_size_intervals(filter_data["sizes"])
                 if sizes:
                     selected = self.ui.print_company_filter_menu("size", sizes)
                     if selected:
                         filters["size"] = selected
+
+                # Ask for total employee limit (optional)
+                if total_limit is None:
+                    limit_input = self.ui.prompt_user_input(
+                        "Max total employees to search (leave empty for no limit)"
+                    )
+                    if limit_input and limit_input.isdigit():
+                        total_limit = int(limit_input)
             else:
                 if config.outreach.filters.industry:
                     filters["industry"] = config.outreach.filters.industry
@@ -565,6 +582,11 @@ class JobApplicationCLI:
                 "filters": filters,
                 "credentials": {"email": email, "password": password},
             }
+            if total_limit is not None:
+                search_payload["total_limit"] = total_limit
+                self.ui.console.print(
+                    f"Total employee limit: [bold yellow]{total_limit}[/bold yellow]\n"
+                )
 
             from rich.live import Live
             from rich.spinner import Spinner
@@ -622,7 +644,7 @@ class JobApplicationCLI:
             # Load default template if available
             default_template = None
             if config.outreach.message_template_path:
-                from src.core.tools.message_template import load_template
+                from src.core.agents.tools.message_template import load_template
 
                 default_template = load_template(config.outreach.message_template_path)
             elif config.outreach.message_template:
@@ -700,8 +722,8 @@ class JobApplicationCLI:
 
             # Consume results from Kafka
             from src.core.api.schemas.outreach_schemas import OutreachSendResponse
-            from src.core.kafka.consumer import KafkaResultConsumer
-            from src.core.kafka.producer import TOPIC_OUTREACH_RESULTS
+            from src.core.queue.consumer import KafkaResultConsumer
+            from src.core.queue.producer import TOPIC_OUTREACH_RESULTS
 
             consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
 
@@ -740,6 +762,22 @@ class JobApplicationCLI:
                 self.ui.console.print(f"Outreach failed: {str(e)}", style="red")
             logger.exception("Outreach workflow failed")
             sys.exit(1)
+
+    @staticmethod
+    def _sort_size_intervals(sizes: List[str]) -> List[str]:
+        """Sort company size intervals by their lower bound numerically.
+
+        Handles formats like "1-10", "11-50", "51-200", "10001+", "Self-employed".
+        """
+        import re
+
+        def sort_key(s: str) -> int:
+            match = re.match(r"(\d+)", s)
+            if match:
+                return int(match.group(1))
+            return float("inf")  # Non-numeric values go last
+
+        return sorted(sizes, key=sort_key)
 
     def run(self):
         """Run the CLI application."""

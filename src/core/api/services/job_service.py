@@ -1,5 +1,6 @@
 """Service layer for the job application workflow."""
 
+import gc
 import threading
 import uuid
 
@@ -7,7 +8,7 @@ from loguru import logger
 
 from src.config.config_loader import load_config
 from src.core.api.schemas.job_schemas import JobApplyRequest, JobApplyResponse
-from src.core.kafka.producer import TOPIC_JOB_RESULTS, KafkaResultProducer
+from src.core.queue.producer import TOPIC_JOB_RESULTS, KafkaResultProducer
 
 
 class JobService:
@@ -25,6 +26,7 @@ class JobService:
             target=self._run,
             args=(task_id, request),
             name=f"job-apply-{task_id[:8]}",
+            daemon=True,
         )
         thread.start()
 
@@ -83,5 +85,6 @@ class JobService:
             )
         finally:
             del agent
+            gc.collect()
 
         self._producer.publish(TOPIC_JOB_RESULTS, task_id, response)

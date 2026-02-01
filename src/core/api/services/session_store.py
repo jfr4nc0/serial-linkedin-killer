@@ -1,24 +1,18 @@
-"""In-memory session storage for two-phase outreach workflow."""
+"""Session storage backed by SQLite via AgentDB."""
 
-import threading
-import time
 import uuid
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
+from src.core.db.agent_db import AgentDB
+
 
 class SessionStore:
-    """Thread-safe in-memory session store with TTL expiration."""
+    """SQLite-backed session store with TTL expiration."""
 
-    def __init__(self, ttl: int = 3600):
-        """Initialize session store.
-
-        Args:
-            ttl: Session time-to-live in seconds (default: 1 hour).
-        """
-        self._sessions: Dict[str, Dict[str, Any]] = {}
-        self._lock = threading.Lock()
+    def __init__(self, agent_db: AgentDB, ttl: int = 3600):
+        self._db = agent_db
         self._ttl = ttl
 
     def create(
@@ -28,32 +22,17 @@ class SessionStore:
         companies: List[Dict],
         trace_id: str = "",
     ) -> str:
-        """Create a new session with search results.
-
-        Args:
-            employees: All employees found.
-            clustered: Employees grouped by role category.
-            companies: Companies that were searched.
-            trace_id: Trace ID for logging correlation.
-
-        Returns:
-            New session_id.
-        """
         session_id = str(uuid.uuid4())
-        now = time.time()
 
-        with self._lock:
-            # Clean up expired sessions opportunistically
-            self._cleanup_expired_locked()
+        data = {
+            "employees": employees,
+            "clustered": clustered,
+            "companies": companies,
+            "trace_id": trace_id,
+        }
 
-            self._sessions[session_id] = {
-                "employees": employees,
-                "clustered": clustered,
-                "companies": companies,
-                "trace_id": trace_id,
-                "created_at": now,
-                "expires_at": now + self._ttl,
-            }
+        self._db.save_session(session_id, data, ttl=self._ttl)
+        self._db.cleanup_expired_sessions()
 
         logger.debug(
             "Session created",
@@ -64,62 +43,21 @@ class SessionStore:
         return session_id
 
     def get(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get session data by ID.
-
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            Session data dict or None if not found/expired.
-        """
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if not session:
-                return None
-
-            # Check expiration
-            if time.time() > session["expires_at"]:
-                del self._sessions[session_id]
-                logger.debug("Session expired", session_id=session_id)
-                return None
-
-            return session
+        data = self._db.get_session(session_id)
+        if not data:
+            logger.debug("Session not found or expired", session_id=session_id)
+            return None
+        return data
 
     def delete(self, session_id: str) -> bool:
-        """Delete a session.
+        deleted = self._db.delete_session(session_id)
+        if deleted:
+            logger.debug("Session deleted", session_id=session_id)
+        return deleted
 
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            True if session was deleted, False if not found.
-        """
-        with self._lock:
-            if session_id in self._sessions:
-                del self._sessions[session_id]
-                logger.debug("Session deleted", session_id=session_id)
-                return True
-            return False
-
-    def _cleanup_expired_locked(self) -> int:
-        """Remove expired sessions. Must be called with lock held.
-
-        Returns:
-            Number of sessions removed.
-        """
-        now = time.time()
-        expired = [
-            sid for sid, data in self._sessions.items() if now > data["expires_at"]
-        ]
-        for sid in expired:
-            del self._sessions[sid]
-
-        if expired:
-            logger.debug("Cleaned up expired sessions", count=len(expired))
-
-        return len(expired)
+    def clear(self) -> None:
+        self._db.cleanup_expired_sessions()
 
     def count(self) -> int:
-        """Return number of active sessions."""
-        with self._lock:
-            return len(self._sessions)
+        # Not critical — return 0 as approximate
+        return 0

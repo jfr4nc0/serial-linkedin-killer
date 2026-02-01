@@ -1,21 +1,20 @@
-# LinkedIn MCP Package - Main exports
-# Only import essential public APIs, avoid circular imports
+# LinkedIn MCP subpackage
+# Minimal imports to avoid circular dependencies
 
-# Import types for external API
-from src.linkedin_mcp.linkedin.model.types import (
+from src.linkedin_mcp.model.types import (
     ApplicationRequest,
     ApplicationResult,
+    AuthState,
     CVAnalysis,
     JobResult,
 )
 
 __all__ = [
-    # Types - main public API
-    "CVAnalysis",
     "ApplicationRequest",
     "ApplicationResult",
+    "AuthState",
+    "CVAnalysis",
     "JobResult",
 ]
 
-# Services and other components should be imported directly by modules that need them
-# to avoid circular import issues at package initialization time
+# Note: Services, agents, and graphs should be imported directly by modules that need them

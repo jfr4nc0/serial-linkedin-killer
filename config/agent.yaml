@@ -6,7 +6,7 @@ llm:
 
 mcp_server:
   host: "localhost"
-  port: 8000
+  port: 3000
 
 linkedin:
   email: "" # or use LINKEDIN_EMAIL env var
@@ -16,13 +16,15 @@ browser:
   headless: false
   use_undetected: true
   browser_type: "chrome"
+  chrome_version: 143 # Force ChromeDriver to match Chrome 143
+  # chrome_binary_path: "/usr/bin/google-chrome"  # Uncomment to specify Chrome binary
 
 outreach:
   dataset_path: "./data/free_company_dataset.csv"
   db_path: "./data/companies.db"
   message_template_path: ""
   message_template: ""
-  employees_per_company: 10
+  employees_per_company: 50
   daily_message_limit: 50
   delay_between_messages_min: 30.0
   delay_between_messages_max: 120.0
@@ -40,6 +42,10 @@ kafka:
 api:
   host: "0.0.0.0"
   port: 8080
+
+db:
+  url: "sqlite:///./data/agent.db"
+  company_url: "sqlite:///./data/companies.db"
 
 observability:
   langfuse_enabled: false
