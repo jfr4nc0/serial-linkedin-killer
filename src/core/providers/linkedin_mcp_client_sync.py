@@ -110,13 +110,21 @@ class LinkedInMCPClientSync:
         password: str,
         total_limit: int = None,
         trace_id: str = None,
+        exclude_companies: List[str] = None,
+        exclude_profile_urls: List[str] = None,
     ) -> List[Dict[str, Any]]:
         """Synchronous wrapper for search_employees_batch."""
 
         async def _search():
             async with self.client as client:
                 return await client.search_employees_batch(
-                    companies, email, password, total_limit, trace_id
+                    companies,
+                    email,
+                    password,
+                    total_limit,
+                    trace_id,
+                    exclude_companies=exclude_companies,
+                    exclude_profile_urls=exclude_profile_urls,
                 )
 
         return self._run(_search())

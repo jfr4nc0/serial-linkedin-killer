@@ -64,6 +64,11 @@ class APIConfig(BaseModel):
     port: int = 8080
 
 
+class DBConfig(BaseModel):
+    url: str = "sqlite:///./data/agent.db"
+    company_url: str = "sqlite:///./data/companies.db"
+
+
 class ObservabilityConfig(BaseModel):
     langfuse_enabled: bool = False
     log_level: str = "INFO"
@@ -78,6 +83,7 @@ class AgentConfig(BaseModel):
     cv: CVConfig = CVConfig()
     kafka: KafkaConfig = KafkaConfig()
     api: APIConfig = APIConfig()
+    db: DBConfig = DBConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
 
 
@@ -116,6 +122,8 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
         "kafka.bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
         "api.host": os.getenv("API_HOST"),
         "api.port": os.getenv("API_PORT"),
+        "db.url": os.getenv("DATABASE_URL"),
+        "db.company_url": os.getenv("COMPANY_DATABASE_URL"),
         "observability.log_level": os.getenv("LOG_LEVEL"),
     }
 

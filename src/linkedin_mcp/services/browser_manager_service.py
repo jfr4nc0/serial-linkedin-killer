@@ -60,6 +60,7 @@ class BrowserManagerService(IBrowserManager):
     def _get_chrome_options(self) -> Options:
         """Configure Chrome options for LinkedIn automation."""
         options = Options()
+        options.page_load_strategy = "eager"
 
         if self.headless:
             options.add_argument("--headless")
@@ -93,6 +94,7 @@ class BrowserManagerService(IBrowserManager):
     def _start_firefox(self) -> webdriver.Firefox:
         """Start Firefox as fallback when Chrome fails."""
         firefox_options = FirefoxOptions()
+        firefox_options.page_load_strategy = "eager"
 
         if self.headless:
             firefox_options.add_argument("--headless")

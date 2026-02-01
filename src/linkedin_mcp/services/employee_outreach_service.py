@@ -84,6 +84,8 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         companies: List[CompanySearchRequest],
         user_credentials: Dict[str, str],
         total_limit: int = None,
+        exclude_companies: List[str] = None,
+        exclude_profile_urls: List[str] = None,
     ) -> List[BatchEmployeeSearchResult]:
         """Search employees across multiple companies with a SINGLE browser session.
 
@@ -94,12 +96,18 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                          When set, stops searching once this many employees are collected.
         """
         logger = get_mcp_logger()
+        exclude_companies_set = set(exclude_companies or [])
+        exclude_urls_set = set(exclude_profile_urls or [])
         try:
             self._ensure_authenticated(user_credentials)
 
             results = []
             total_collected = 0
             for i, company in enumerate(companies):
+                # Skip excluded companies
+                if company["company_linkedin_url"] in exclude_companies_set:
+                    logger.info(f"Skipping excluded company: {company['company_name']}")
+                    continue
                 # Check total limit before searching next company
                 if total_limit is not None and total_collected >= total_limit:
                     logger.info(
@@ -124,6 +132,18 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                         company_limit,
                         self.browser_manager,
                     )
+                    # Filter out already-messaged employees
+                    if exclude_urls_set:
+                        before = len(employees)
+                        employees = [
+                            e
+                            for e in employees
+                            if e.get("profile_url", "") not in exclude_urls_set
+                        ]
+                        if before != len(employees):
+                            logger.info(
+                                f"Filtered {before - len(employees)} already-messaged employees from {company['company_name']}"
+                            )
                     total_collected += len(employees)
                     results.append(
                         BatchEmployeeSearchResult(

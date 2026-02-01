@@ -43,6 +43,10 @@ api:
   host: "0.0.0.0"
   port: 8080
 
+db:
+  url: "sqlite:///./data/agent.db"
+  company_url: "sqlite:///./data/companies.db"
+
 observability:
   langfuse_enabled: false
   log_level: "INFO"

@@ -129,13 +129,13 @@ class JobApplicationCLI:
         config = load_config()
 
         csv_path = csv_path or config.outreach.dataset_path
-        db_path = db_path or config.outreach.db_path
+        db_url = db_path or config.db.company_url
 
         self.ui.console.print(
-            f"Importing [bold]{csv_path}[/bold] into [bold]{db_path}[/bold]..."
+            f"Importing [bold]{csv_path}[/bold] into [bold]{db_url}[/bold]..."
         )
 
-        with CompanyDB(db_path) as db:
+        with CompanyDB(db_url) as db:
             total = db.import_csv(
                 csv_path,
                 on_progress=lambda n: self.ui.console.print(

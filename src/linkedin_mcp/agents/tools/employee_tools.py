@@ -107,6 +107,8 @@ def register_employee_tools(mcp, employee_outreach_service):
         email: str,
         password: str,
         total_limit: int = None,
+        exclude_companies: list[str] = None,
+        exclude_profile_urls: list[str] = None,
         trace_id: str = None,
     ) -> list[dict]:
         """
@@ -118,6 +120,8 @@ def register_employee_tools(mcp, employee_outreach_service):
             email: LinkedIn email for authentication
             password: LinkedIn password for authentication
             total_limit: Optional max total employees across all companies
+            exclude_companies: Optional list of company LinkedIn URLs to skip
+            exclude_profile_urls: Optional list of employee profile URLs to exclude from results
             trace_id: Optional trace ID for correlation
 
         Returns:
@@ -136,7 +140,11 @@ def register_employee_tools(mcp, employee_outreach_service):
 
         user_credentials = {"email": email, "password": password}
         result = employee_outreach_service.search_employees_batch(
-            companies, user_credentials, total_limit=total_limit
+            companies,
+            user_credentials,
+            total_limit=total_limit,
+            exclude_companies=exclude_companies,
+            exclude_profile_urls=exclude_profile_urls,
         )
 
         if trace_id:

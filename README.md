@@ -184,6 +184,9 @@ outreach:
   delay_between_messages_min: 30.0
   delay_between_messages_max: 120.0
 
+db:
+  path: "./data/agent.db"  # SQLite — auto-created on first run
+
 kafka:
   bootstrap_servers: "localhost:9092"
 

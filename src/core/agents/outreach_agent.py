@@ -8,6 +8,7 @@ from loguru import logger
 
 from src.config.config_loader import load_config
 from src.core.agents.tools.message_template import render_template
+from src.core.db.agent_db import AgentDB
 from src.core.model.outreach_state import OutreachAgentState
 from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
 from src.core.utils.logging_config import get_core_agent_logger
@@ -24,8 +25,9 @@ class EmployeeOutreachAgent:
       - Phase 2: send messages with per-employee templates (run_send)
     """
 
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: str = None, agent_db: AgentDB = None):
         self.config = load_config(config_path)
+        self._db = agent_db or AgentDB(self.config.db.url)
         self._full_graph = self._build_full_graph()
         self._search_graph = self._build_search_graph()
         self._send_graph = self._build_send_graph()
@@ -99,6 +101,13 @@ class EmployeeOutreachAgent:
                     "current_status": "No companies with LinkedIn URLs to search",
                 }
 
+            # Build exclusion list from already-messaged employees
+            messaged_urls = list(self._db.get_messaged_profile_urls())
+            if messaged_urls:
+                agent_logger.info(
+                    f"Excluding {len(messaged_urls)} already-messaged profile URLs from search",
+                )
+
             agent_logger.info(
                 f"Batch searching employees at {len(companies_to_search)} companies",
             )
@@ -110,6 +119,7 @@ class EmployeeOutreachAgent:
                 password=state["user_credentials"]["password"],
                 total_limit=state.get("total_limit"),
                 trace_id=trace_id,
+                exclude_profile_urls=messaged_urls if messaged_urls else None,
             )
 
             # Flatten results
@@ -144,7 +154,7 @@ class EmployeeOutreachAgent:
         agent_logger = get_core_agent_logger(trace_id)
 
         message_results = []
-        messages_sent = state.get("messages_sent_today", 0)
+        messages_sent = self._db.get_daily_quota()
         daily_limit = state.get(
             "daily_message_limit", self.config.outreach.daily_message_limit
         )
@@ -158,6 +168,13 @@ class EmployeeOutreachAgent:
                 if messages_sent >= daily_limit:
                     agent_logger.info(f"Daily message limit reached ({daily_limit})")
                     break
+
+                profile_url = employee.get("profile_url", "")
+                if self._db.was_already_messaged(profile_url):
+                    agent_logger.info(
+                        f"Skipping {employee.get('name', '')}: already messaged"
+                    )
+                    continue
 
                 # Render template with employee-specific variables
                 variables = {
@@ -174,7 +191,7 @@ class EmployeeOutreachAgent:
                     )
 
                     result = mcp_client.send_message(
-                        employee_profile_url=employee["profile_url"],
+                        employee_profile_url=profile_url,
                         employee_name=employee.get("name", ""),
                         message=message_text,
                         email=state["user_credentials"]["email"],
@@ -183,15 +200,30 @@ class EmployeeOutreachAgent:
                     )
 
                     message_results.append(result)
-                    if result.get("sent"):
-                        messages_sent += 1
+                    sent = result.get("sent", False)
+                    self._db.record_message(
+                        profile_url,
+                        employee.get("name", ""),
+                        sent,
+                        result.get("method", ""),
+                        result.get("error"),
+                    )
+                    if sent:
+                        messages_sent = self._db.increment_daily_quota()
 
                 except Exception as e:
                     error_msg = f"Failed to send message to {employee.get('name', '')}: {str(e)}"
                     agent_logger.error(error_msg)
+                    self._db.record_message(
+                        profile_url,
+                        employee.get("name", ""),
+                        False,
+                        "",
+                        str(e),
+                    )
                     message_results.append(
                         {
-                            "employee_profile_url": employee.get("profile_url", ""),
+                            "employee_profile_url": profile_url,
                             "employee_name": employee.get("name", ""),
                             "sent": False,
                             "method": "",
@@ -228,7 +260,7 @@ class EmployeeOutreachAgent:
         agent_logger = get_core_agent_logger(trace_id)
 
         message_results = []
-        messages_sent = state.get("messages_sent_today", 0)
+        messages_sent = self._db.get_daily_quota()
         daily_limit = state.get(
             "daily_message_limit", self.config.outreach.daily_message_limit
         )
@@ -240,6 +272,13 @@ class EmployeeOutreachAgent:
                 if messages_sent >= daily_limit:
                     agent_logger.info(f"Daily message limit reached ({daily_limit})")
                     break
+
+                profile_url = employee.get("profile_url", "")
+                if self._db.was_already_messaged(profile_url):
+                    agent_logger.info(
+                        f"Skipping {employee.get('name', '')}: already messaged"
+                    )
+                    continue
 
                 # Get per-employee template
                 template = employee.get("_template", "")
@@ -267,7 +306,7 @@ class EmployeeOutreachAgent:
                     )
 
                     result = mcp_client.send_message(
-                        employee_profile_url=employee["profile_url"],
+                        employee_profile_url=profile_url,
                         employee_name=employee.get("name", ""),
                         message=message_text,
                         email=state["user_credentials"]["email"],
@@ -279,15 +318,30 @@ class EmployeeOutreachAgent:
                     result["_role"] = role
                     message_results.append(result)
 
-                    if result.get("sent"):
-                        messages_sent += 1
+                    sent = result.get("sent", False)
+                    self._db.record_message(
+                        profile_url,
+                        employee.get("name", ""),
+                        sent,
+                        result.get("method", ""),
+                        result.get("error"),
+                    )
+                    if sent:
+                        messages_sent = self._db.increment_daily_quota()
 
                 except Exception as e:
                     error_msg = f"Failed to send message to {employee.get('name', '')}: {str(e)}"
                     agent_logger.error(error_msg)
+                    self._db.record_message(
+                        profile_url,
+                        employee.get("name", ""),
+                        False,
+                        "",
+                        str(e),
+                    )
                     message_results.append(
                         {
-                            "employee_profile_url": employee.get("profile_url", ""),
+                            "employee_profile_url": profile_url,
                             "employee_name": employee.get("name", ""),
                             "sent": False,
                             "method": "",
