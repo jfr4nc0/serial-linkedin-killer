@@ -16,7 +16,7 @@ browser:
   headless: false
   use_undetected: true
   browser_type: "chrome"
-  chrome_version: 143  # Force ChromeDriver to match Chrome 143
+  chrome_version: 143 # Force ChromeDriver to match Chrome 143
   # chrome_binary_path: "/usr/bin/google-chrome"  # Uncomment to specify Chrome binary
 
 outreach:
@@ -24,7 +24,7 @@ outreach:
   db_path: "./data/companies.db"
   message_template_path: ""
   message_template: ""
-  employees_per_company: 10
+  employees_per_company: 50
   daily_message_limit: 50
   delay_between_messages_min: 30.0
   delay_between_messages_max: 120.0

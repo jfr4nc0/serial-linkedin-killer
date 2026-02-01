@@ -8,7 +8,7 @@ from loguru import logger
 
 from src.config.config_loader import load_config
 from src.core.api.schemas.job_schemas import JobApplyRequest, JobApplyResponse
-from src.core.kafka.producer import TOPIC_JOB_RESULTS, KafkaResultProducer
+from src.core.queue.producer import TOPIC_JOB_RESULTS, KafkaResultProducer
 
 
 class JobService:

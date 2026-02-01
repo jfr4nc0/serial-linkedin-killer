@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from typing import Any, Dict, List, Optional, Union
 
@@ -75,8 +76,12 @@ class LinkedInMCPClient:
                 )
                 raise Exception(f"Tool '{tool_name}' execution failed: {error_content}")
 
-            # FastMCP returns structured data directly
-            return result.data
+            # Extract JSON from content text — result.data can return
+            # unparsed model objects (Root()) for complex return types
+            if result.content:
+                text = result.content[0].text
+                return json.loads(text)
+            return None
 
         except Exception as e:
             raise Exception(

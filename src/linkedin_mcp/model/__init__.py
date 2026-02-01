@@ -1,6 +1,3 @@
-# LinkedIn MCP subpackage
-# Minimal imports to avoid circular dependencies
-
 from src.linkedin_mcp.model.types import (
     ApplicationRequest,
     ApplicationResult,
@@ -10,11 +7,9 @@ from src.linkedin_mcp.model.types import (
 )
 
 __all__ = [
-    "ApplicationRequest",
-    "ApplicationResult",
-    "AuthState",
     "CVAnalysis",
+    "ApplicationRequest",
+    "AuthState",
+    "ApplicationResult",
     "JobResult",
 ]
-
-# Note: Services, agents, and graphs should be imported directly by modules that need them

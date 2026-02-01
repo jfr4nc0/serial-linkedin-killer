@@ -10,7 +10,7 @@ from src.core.api.controllers.outreach_controller import router as outreach_rout
 from src.core.api.services.job_service import JobService
 from src.core.api.services.outreach_service import OutreachService
 from src.core.api.services.session_store import SessionStore
-from src.core.kafka.producer import KafkaResultProducer
+from src.core.queue.producer import KafkaResultProducer
 
 _producer: KafkaResultProducer | None = None
 _session_store: SessionStore | None = None
@@ -40,9 +40,7 @@ async def lifespan(app: FastAPI):
     if _producer:
         _producer.close()
 
-    from src.linkedin_mcp.linkedin.services.browser_manager_service import (
-        BrowserManagerService,
-    )
+    from src.linkedin_mcp.services.browser_manager_service import BrowserManagerService
 
     BrowserManagerService.cleanup_all()
 

@@ -123,7 +123,7 @@ class JobApplicationCLI:
     def _import_dataset_command(self, csv_path: Optional[str], db_path: Optional[str]):
         """Import the company CSV into SQLite."""
         from src.config.config_loader import load_config
-        from src.core.tools.company_db import CompanyDB
+        from src.core.agents.tools.company_db import CompanyDB
 
         self.ui = TerminalUI("rich")
         config = load_config()
@@ -225,8 +225,8 @@ class JobApplicationCLI:
             from rich.text import Text
 
             from src.core.api.schemas.job_schemas import JobApplyResponse
-            from src.core.kafka.consumer import KafkaResultConsumer
-            from src.core.kafka.producer import TOPIC_JOB_RESULTS
+            from src.core.queue.consumer import KafkaResultConsumer
+            from src.core.queue.producer import TOPIC_JOB_RESULTS
 
             consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
 
@@ -644,7 +644,7 @@ class JobApplicationCLI:
             # Load default template if available
             default_template = None
             if config.outreach.message_template_path:
-                from src.core.tools.message_template import load_template
+                from src.core.agents.tools.message_template import load_template
 
                 default_template = load_template(config.outreach.message_template_path)
             elif config.outreach.message_template:
@@ -722,8 +722,8 @@ class JobApplicationCLI:
 
             # Consume results from Kafka
             from src.core.api.schemas.outreach_schemas import OutreachSendResponse
-            from src.core.kafka.consumer import KafkaResultConsumer
-            from src.core.kafka.producer import TOPIC_OUTREACH_RESULTS
+            from src.core.queue.consumer import KafkaResultConsumer
+            from src.core.queue.producer import TOPIC_OUTREACH_RESULTS
 
             consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
 

@@ -5,6 +5,8 @@ from typing import Any, Dict, List
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
+from src.core.agents.tools.cv_analysis_tools import analyze_cv_structure, read_pdf_cv
+from src.core.agents.tools.cv_loader import extract_cv_analysis, load_cv_data
 from src.core.model.application_request import ApplicationRequest
 from src.core.model.job_application_agent_state import JobApplicationAgentState
 from src.core.model.job_result import JobResult
@@ -12,8 +14,6 @@ from src.core.model.job_search_request import JobSearchRequest
 from src.core.observability.langfuse_config import get_langfuse_config_for_langgraph
 from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
 from src.core.providers.llm_client import get_llm_client
-from src.core.tools.cv_loader import extract_cv_analysis, load_cv_data
-from src.core.tools.tools import analyze_cv_structure, read_pdf_cv
 from src.core.utils.logging_config import get_core_agent_logger
 
 

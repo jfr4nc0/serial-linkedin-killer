@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 def test_search_jobs():
     """Test search_jobs tool directly."""
-    from src.linkedin_mcp.linkedin.services.job_search_service import JobSearchService
+    from src.linkedin_mcp.services.job_search_service import JobSearchService
 
     load_dotenv()
 

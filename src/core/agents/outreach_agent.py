@@ -7,9 +7,9 @@ from langgraph.graph import END, StateGraph
 from loguru import logger
 
 from src.config.config_loader import load_config
+from src.core.agents.tools.message_template import render_template
 from src.core.model.outreach_state import OutreachAgentState
 from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
-from src.core.tools.message_template import render_template
 from src.core.utils.logging_config import get_core_agent_logger
 
 

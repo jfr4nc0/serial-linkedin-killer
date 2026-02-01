@@ -15,10 +15,8 @@ load_dotenv()
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.linkedin_mcp.linkedin.model.types import ApplicationRequest
-from src.linkedin_mcp.linkedin.services.job_application_service import (
-    JobApplicationService,
-)
+from src.linkedin_mcp.model.types import ApplicationRequest
+from src.linkedin_mcp.services.job_application_service import JobApplicationService
 
 
 def main():

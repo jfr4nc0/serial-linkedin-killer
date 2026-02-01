@@ -36,4 +36,4 @@ fi
 
 echo "MCP Server: $MCP_SERVER_HOST:$MCP_SERVER_PORT"
 
-exec python -m src.linkedin_mcp.linkedin.linkedin_server --host "$MCP_SERVER_HOST" --port "$MCP_SERVER_PORT"
+exec python -m src.linkedin_mcp.linkedin_server --host "$MCP_SERVER_HOST" --port "$MCP_SERVER_PORT"

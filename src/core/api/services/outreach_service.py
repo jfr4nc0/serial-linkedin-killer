@@ -8,6 +8,8 @@ from typing import Optional
 from loguru import logger
 
 from src.config.config_loader import load_config
+from src.core.agents.tools.company_db import CompanyDB
+from src.core.agents.tools.role_clustering import cluster_employees_by_role
 from src.core.api.schemas.outreach_schemas import (
     OutreachFiltersResponse,
     OutreachRunRequest,
@@ -18,9 +20,7 @@ from src.core.api.schemas.outreach_schemas import (
     OutreachSendResponse,
 )
 from src.core.api.services.session_store import SessionStore
-from src.core.kafka.producer import TOPIC_OUTREACH_RESULTS, KafkaResultProducer
-from src.core.tools.company_db import CompanyDB
-from src.core.tools.role_clustering import cluster_employees_by_role
+from src.core.queue.producer import TOPIC_OUTREACH_RESULTS, KafkaResultProducer
 
 
 class OutreachService:
