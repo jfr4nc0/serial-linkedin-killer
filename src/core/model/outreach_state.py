@@ -30,3 +30,7 @@ class OutreachAgentState(TypedDict):
 
     # Search limits
     total_limit: Optional[int]  # Max total employees across all companies
+
+    # User-provided exclusions (LinkedIn URLs)
+    exclude_companies: Optional[List[str]]
+    exclude_profile_urls: Optional[List[str]]

@@ -40,6 +40,8 @@ class OutreachSearchRequest(BaseModel):
     filters: Dict[str, List[str]]
     credentials: CredentialsModel
     total_limit: Optional[int] = None
+    exclude_companies: Optional[List[str]] = None
+    exclude_profile_urls: Optional[List[str]] = None
 
 
 class OutreachSearchResponse(BaseModel):

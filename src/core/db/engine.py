@@ -16,7 +16,23 @@ def create_db_engine(url: str) -> Engine:
     if url.startswith("sqlite"):
         connect_args = {"check_same_thread": False}
 
-    engine = create_engine(url, connect_args=connect_args)
+    # Configure connection pooling
+    pool_kwargs = {}
+    if not url.startswith("sqlite"):
+        # Full connection pool for non-SQLite databases
+        pool_kwargs = {
+            "pool_size": 20,
+            "max_overflow": 40,
+            "pool_pre_ping": True,  # Verify connections before use
+            "pool_recycle": 3600,  # Recycle connections after 1 hour
+        }
+    else:
+        # SQLite uses StaticPool for thread safety with check_same_thread=False
+        pool_kwargs = {
+            "pool_pre_ping": True,
+        }
+
+    engine = create_engine(url, connect_args=connect_args, **pool_kwargs)
 
     # SQLite-specific PRAGMAs
     if url.startswith("sqlite"):

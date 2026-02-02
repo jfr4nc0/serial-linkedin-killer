@@ -101,11 +101,20 @@ class EmployeeOutreachAgent:
                     "current_status": "No companies with LinkedIn URLs to search",
                 }
 
-            # Build exclusion list from already-messaged employees
+            # Build exclusion list: merge DB-based + user-provided exclusions
             messaged_urls = list(self._db.get_messaged_profile_urls())
-            if messaged_urls:
+            user_exclude_urls = state.get("exclude_profile_urls") or []
+            all_exclude_urls = list(set(messaged_urls + user_exclude_urls))
+            if all_exclude_urls:
                 agent_logger.info(
-                    f"Excluding {len(messaged_urls)} already-messaged profile URLs from search",
+                    f"Excluding {len(all_exclude_urls)} profile URLs "
+                    f"({len(messaged_urls)} already-messaged, {len(user_exclude_urls)} user-provided)",
+                )
+
+            exclude_companies = state.get("exclude_companies")
+            if exclude_companies:
+                agent_logger.info(
+                    f"Excluding {len(exclude_companies)} company URLs",
                 )
 
             agent_logger.info(
@@ -119,7 +128,8 @@ class EmployeeOutreachAgent:
                 password=state["user_credentials"]["password"],
                 total_limit=state.get("total_limit"),
                 trace_id=trace_id,
-                exclude_profile_urls=messaged_urls if messaged_urls else None,
+                exclude_profile_urls=all_exclude_urls if all_exclude_urls else None,
+                exclude_companies=exclude_companies,
             )
 
             # Flatten results
@@ -164,13 +174,16 @@ class EmployeeOutreachAgent:
             template = state["message_template"]
             static_vars = state.get("template_variables", {})
 
+            # Batch load all messaged URLs once (fixes N+1 query)
+            messaged_urls = self._db.get_messaged_profile_urls()
+
             for employee in state["employees_found"]:
                 if messages_sent >= daily_limit:
                     agent_logger.info(f"Daily message limit reached ({daily_limit})")
                     break
 
                 profile_url = employee.get("profile_url", "")
-                if self._db.was_already_messaged(profile_url):
+                if profile_url in messaged_urls:
                     agent_logger.info(
                         f"Skipping {employee.get('name', '')}: already messaged"
                     )
@@ -268,13 +281,16 @@ class EmployeeOutreachAgent:
         try:
             mcp_client = LinkedInMCPClientSync()
 
+            # Batch load all messaged URLs once (fixes N+1 query)
+            messaged_urls = self._db.get_messaged_profile_urls()
+
             for employee in state["employees_found"]:
                 if messages_sent >= daily_limit:
                     agent_logger.info(f"Daily message limit reached ({daily_limit})")
                     break
 
                 profile_url = employee.get("profile_url", "")
-                if self._db.was_already_messaged(profile_url):
+                if profile_url in messaged_urls:
                     agent_logger.info(
                         f"Skipping {employee.get('name', '')}: already messaged"
                     )
@@ -372,12 +388,17 @@ class EmployeeOutreachAgent:
         companies: List[Dict[str, str]],
         user_credentials: Dict[str, str],
         total_limit: Optional[int] = None,
+        exclude_companies: Optional[List[str]] = None,
+        exclude_profile_urls: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Execute Phase 1: search employees only.
 
         Args:
             companies: List of filtered company dicts from DB
             user_credentials: LinkedIn credentials {email, password}
+            total_limit: Max total employees across all companies
+            exclude_companies: LinkedIn URLs of companies to skip
+            exclude_profile_urls: LinkedIn URLs of people to skip
 
         Returns:
             List of employee dicts found
@@ -407,6 +428,8 @@ class EmployeeOutreachAgent:
             daily_message_limit=0,
             messages_sent_today=0,
             total_limit=total_limit,
+            exclude_companies=exclude_companies,
+            exclude_profile_urls=exclude_profile_urls,
         )
 
         final_state = self._search_graph.invoke(initial_state)
@@ -461,6 +484,8 @@ class EmployeeOutreachAgent:
             daily_message_limit=daily_limit,
             messages_sent_today=0,
             total_limit=None,
+            exclude_companies=None,
+            exclude_profile_urls=None,
         )
 
         final_state = self._send_graph.invoke(initial_state)
@@ -514,6 +539,8 @@ class EmployeeOutreachAgent:
             daily_message_limit=self.config.outreach.daily_message_limit,
             messages_sent_today=0,
             total_limit=None,
+            exclude_companies=None,
+            exclude_profile_urls=None,
         )
 
         final_state = self._full_graph.invoke(initial_state)

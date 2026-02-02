@@ -28,6 +28,8 @@ CLI (local)
 
 ## Quick Start
 
+Download the dataset from [dataset-url](https://www.peopledatalabs.com/data-lab/dataset/company-dataset) and add the CSV to 'data/free_company_dataset.csv'
+
 ```bash
 # Install
 poetry install

@@ -26,6 +26,9 @@ from src.core.utils.logging_config import (
 class JobApplicationCLI:
     """Command-line interface for the LinkedIn Job Application Agent."""
 
+    # Shared HTTP client with connection pooling
+    _http_client: Optional[httpx.Client] = None
+
     def __init__(self):
         load_dotenv()
         configure_core_agent_logging()
@@ -40,6 +43,24 @@ class JobApplicationCLI:
         self.config = None
 
         self._register_commands()
+
+    @classmethod
+    def _get_http_client(cls) -> httpx.Client:
+        """Get or create the shared HTTP client with connection pooling."""
+        if cls._http_client is None:
+            # Long default timeout, can be overridden per-request
+            cls._http_client = httpx.Client(
+                timeout=httpx.Timeout(30.0, read=600.0),  # 30s connect, 600s read
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            )
+        return cls._http_client
+
+    @classmethod
+    def _close_http_client(cls):
+        """Close the shared HTTP client."""
+        if cls._http_client is not None:
+            cls._http_client.close()
+            cls._http_client = None
 
     def _get_api_base_url(self) -> str:
         """Get the core-agent API base URL from config."""
@@ -212,10 +233,10 @@ class JobApplicationCLI:
             base_url = self._get_api_base_url()
             self.ui.console.print(f"Submitting to {base_url}/api/jobs/apply...")
 
-            with httpx.Client(timeout=30) as client:
-                resp = client.post(f"{base_url}/api/jobs/apply", json=payload)
-                resp.raise_for_status()
-                task_id = resp.json()["task_id"]
+            client = self._get_http_client()
+            resp = client.post(f"{base_url}/api/jobs/apply", json=payload)
+            resp.raise_for_status()
+            task_id = resp.json()["task_id"]
 
             self.ui.console.print(f"Task submitted: {task_id}\n", style="green")
 
@@ -312,9 +333,9 @@ class JobApplicationCLI:
         self.ui.console.print(f"Testing connection to {base_url}...")
 
         try:
-            with httpx.Client(timeout=5) as client:
-                resp = client.get(f"{base_url}/health")
-                resp.raise_for_status()
+            client = self._get_http_client()
+            resp = client.get(f"{base_url}/health", timeout=5.0)
+            resp.raise_for_status()
             self.ui.console.print("Connection successful", style="green")
         except Exception as e:
             self.ui.console.print(f"Connection failed: {str(e)}", style="red")
@@ -517,10 +538,10 @@ class JobApplicationCLI:
 
             # Fetch filter options from API
             self.ui.console.print("Loading filter options from API...")
-            with httpx.Client(timeout=30) as client:
-                resp = client.get(f"{base_url}/api/outreach/filters")
-                resp.raise_for_status()
-                filter_data = resp.json()
+            client = self._get_http_client()
+            resp = client.get(f"{base_url}/api/outreach/filters")
+            resp.raise_for_status()
+            filter_data = resp.json()
 
             total_count = filter_data["total_companies"]
             self.ui.console.print(
@@ -555,6 +576,10 @@ class JobApplicationCLI:
                     )
                     if limit_input and limit_input.isdigit():
                         total_limit = int(limit_input)
+
+                # Collect exclusion lists
+                exclude_companies = self._collect_exclude_urls("companies")
+                exclude_people = self._collect_exclude_urls("people")
             else:
                 if config.outreach.filters.industry:
                     filters["industry"] = config.outreach.filters.industry
@@ -562,6 +587,8 @@ class JobApplicationCLI:
                     filters["country"] = config.outreach.filters.country
                 if config.outreach.filters.size:
                     filters["size"] = config.outreach.filters.size
+                exclude_companies = []
+                exclude_people = []
 
             # Credentials
             email = config.linkedin.email or os.getenv("LINKEDIN_EMAIL", "")
@@ -587,6 +614,16 @@ class JobApplicationCLI:
                 self.ui.console.print(
                     f"Total employee limit: [bold yellow]{total_limit}[/bold yellow]\n"
                 )
+            if exclude_companies:
+                search_payload["exclude_companies"] = exclude_companies
+                self.ui.console.print(
+                    f"Excluding [bold yellow]{len(exclude_companies)}[/bold yellow] companies\n"
+                )
+            if exclude_people:
+                search_payload["exclude_profile_urls"] = exclude_people
+                self.ui.console.print(
+                    f"Excluding [bold yellow]{len(exclude_people)}[/bold yellow] people\n"
+                )
 
             from rich.live import Live
             from rich.spinner import Spinner
@@ -596,12 +633,13 @@ class JobApplicationCLI:
                 Spinner("dots", text="Searching employees and clustering by role..."),
                 console=self.ui.console,
             ) as live:
-                with httpx.Client(timeout=600) as client:  # Long timeout for search
-                    resp = client.post(
-                        f"{base_url}/api/outreach/search", json=search_payload
-                    )
-                    resp.raise_for_status()
-                    search_result = resp.json()
+                client = self._get_http_client()
+                # Long timeout for search (uses client's read timeout of 600s)
+                resp = client.post(
+                    f"{base_url}/api/outreach/search", json=search_payload
+                )
+                resp.raise_for_status()
+                search_result = resp.json()
                 live.update(Text("Search complete!", style="bold green"))
 
             session_id = search_result["session_id"]
@@ -641,7 +679,18 @@ class JobApplicationCLI:
             # === Prompt Templates Per Role Group ===
             selected_groups_config = {}
 
-            # Load default template if available
+            # Load per-role templates from JSON if available
+            role_templates = {}
+            if config.outreach.role_templates_path:
+                role_templates_file = Path(config.outreach.role_templates_path)
+                if role_templates_file.exists():
+                    role_templates = json.loads(role_templates_file.read_text("utf-8"))
+                    self.ui.console.print(
+                        f"Loaded role templates for: {', '.join(role_templates.keys())}",
+                        style="dim",
+                    )
+
+            # Load fallback default template
             default_template = None
             if config.outreach.message_template_path:
                 from src.core.agents.tools.message_template import load_template
@@ -655,9 +704,17 @@ class JobApplicationCLI:
                 count = len(employees_in_role)
                 sample_employee = employees_in_role[0] if employees_in_role else None
 
+                # Use role-specific template if available, otherwise fallback
+                role_default = None
+                if role in role_templates:
+                    tpl = role_templates[role]
+                    role_default = tpl if isinstance(tpl, str) else tpl.get("message", "")
+                if not role_default:
+                    role_default = default_template
+
                 if interactive:
                     template, variables = self.ui.prompt_template_for_role(
-                        role, count, default_template
+                        role, count, role_default
                     )
 
                     # Preview and confirm
@@ -670,13 +727,13 @@ class JobApplicationCLI:
                             role, count, None
                         )
                 else:
-                    # Non-interactive: use default template for all
-                    if not default_template:
+                    # Non-interactive: use role template or fallback
+                    if not role_default:
                         self.ui.console.print(
-                            "No message template configured.", style="red"
+                            f"No message template for role '{role}'.", style="red"
                         )
                         return
-                    template = default_template
+                    template = role_default
                     variables = {}
 
                 selected_groups_config[role] = {
@@ -708,10 +765,10 @@ class JobApplicationCLI:
                 "warm_up": warm_up,
             }
 
-            with httpx.Client(timeout=30) as client:
-                resp = client.post(f"{base_url}/api/outreach/send", json=send_payload)
-                resp.raise_for_status()
-                task_id = resp.json()["task_id"]
+            client = self._get_http_client()
+            resp = client.post(f"{base_url}/api/outreach/send", json=send_payload)
+            resp.raise_for_status()
+            task_id = resp.json()["task_id"]
 
             self.ui.console.print(f"Task submitted: {task_id}", style="green")
 
@@ -762,6 +819,40 @@ class JobApplicationCLI:
                 self.ui.console.print(f"Outreach failed: {str(e)}", style="red")
             logger.exception("Outreach workflow failed")
             sys.exit(1)
+
+    def _collect_exclude_urls(self, label: str) -> List[str]:
+        """Collect LinkedIn URLs to exclude, either inline or from a .txt file.
+
+        User can type URLs one per line (empty line to finish),
+        or provide a path to a .txt file with one URL per line.
+        """
+        self.ui.console.print(
+            f"\nExclude {label} by LinkedIn URL "
+            "(enter URLs one per line, empty to finish, or path to .txt file):"
+        )
+        first_line = (self.ui.prompt_user_input("URL or .txt path") or "").strip()
+
+        if not first_line:
+            return []
+
+        # Check if it's a file path
+        if first_line.endswith(".txt") and os.path.isfile(first_line):
+            with open(first_line) as f:
+                urls = [line.strip() for line in f if line.strip()]
+            self.ui.console.print(
+                f"Loaded {len(urls)} URLs from {first_line}", style="green"
+            )
+            return urls
+
+        # Inline entry: first line is a URL, keep reading until empty
+        urls = [first_line]
+        while True:
+            line = (self.ui.prompt_user_input("URL (empty to finish)") or "").strip()
+            if not line:
+                break
+            urls.append(line)
+
+        return urls
 
     @staticmethod
     def _sort_size_intervals(sizes: List[str]) -> List[str]:

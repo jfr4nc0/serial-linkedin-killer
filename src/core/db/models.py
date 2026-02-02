@@ -1,6 +1,6 @@
 """SQLAlchemy declarative models for all persistent tables."""
 
-from sqlalchemy import Column, Float, Integer, String, Text
+from sqlalchemy import Column, Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -14,7 +14,7 @@ class SessionModel(Base):
     session_id = Column(String, primary_key=True)
     data = Column(Text, nullable=False)
     created_at = Column(Float, nullable=False)
-    expires_at = Column(Float, nullable=False)
+    expires_at = Column(Float, nullable=False, index=True)  # For cleanup queries
 
 
 class JobApplication(Base):
@@ -22,7 +22,7 @@ class JobApplication(Base):
 
     job_id = Column(String, primary_key=True)
     applied_at = Column(Float)
-    success = Column(Integer)
+    success = Column(Integer, index=True)  # For batch queries filtering by success
     error = Column(Text)
 
 
@@ -32,7 +32,7 @@ class MessageSent(Base):
     employee_profile_url = Column(String, primary_key=True)
     employee_name = Column(String)
     sent_at = Column(Float)
-    success = Column(Integer)
+    success = Column(Integer, index=True)  # For batch queries filtering by success
     method = Column(String)
     error = Column(Text)
 
