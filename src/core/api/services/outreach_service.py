@@ -1,8 +1,9 @@
 """Service layer for the employee outreach workflow."""
 
+import atexit
 import gc
-import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from loguru import logger
@@ -21,6 +22,29 @@ from src.core.api.schemas.outreach_schemas import (
 )
 from src.core.api.services.session_store import SessionStore
 from src.core.queue.producer import TOPIC_OUTREACH_RESULTS, KafkaResultProducer
+
+# Module-level thread pool with bounded workers
+_executor: ThreadPoolExecutor | None = None
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    """Get or create the shared thread pool executor."""
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="outreach")
+    return _executor
+
+
+def _shutdown_executor():
+    """Shutdown the thread pool on application exit."""
+    global _executor
+    if _executor is not None:
+        _executor.shutdown(wait=True, cancel_futures=False)
+        _executor = None
+
+
+# Register cleanup on exit
+atexit.register(_shutdown_executor)
 
 
 class OutreachService:
@@ -79,19 +103,20 @@ class OutreachService:
                 companies=companies,
                 user_credentials=request.credentials.model_dump(),
                 total_limit=request.total_limit,
+                exclude_companies=request.exclude_companies,
+                exclude_profile_urls=request.exclude_profile_urls,
             )
         finally:
             del agent
             gc.collect()
 
-        # Safety net: filter out any already-messaged employees
+        # Safety net: filter out any already-messaged employees (batch query)
         from src.core.api.app import get_agent_db
 
         db = get_agent_db()
+        messaged_urls = db.get_messaged_profile_urls()
         employees = [
-            emp
-            for emp in employees
-            if not db.was_already_messaged(emp.get("profile_url", ""))
+            emp for emp in employees if emp.get("profile_url", "") not in messaged_urls
         ]
 
         # Cluster employees by role using LLM
@@ -132,13 +157,8 @@ class OutreachService:
 
         task_id = str(uuid.uuid4())
 
-        thread = threading.Thread(
-            target=self._run_send,
-            args=(task_id, request, session),
-            name=f"outreach-send-{task_id[:8]}",
-            daemon=True,
-        )
-        thread.start()
+        # Submit to thread pool instead of creating unbounded daemon threads
+        _get_executor().submit(self._run_send, task_id, request, session)
 
         # Delete session after use (data is passed to thread)
         self._session_store.delete(request.session_id)
@@ -250,13 +270,8 @@ class OutreachService:
         """Legacy: Submit a single-phase outreach workflow. Returns task_id immediately."""
         task_id = str(uuid.uuid4())
 
-        thread = threading.Thread(
-            target=self._run,
-            args=(task_id, request),
-            name=f"outreach-{task_id[:8]}",
-            daemon=True,
-        )
-        thread.start()
+        # Submit to thread pool instead of creating unbounded daemon threads
+        _get_executor().submit(self._run, task_id, request)
 
         return task_id
 

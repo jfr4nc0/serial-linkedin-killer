@@ -44,6 +44,7 @@ class OutreachConfig(BaseModel):
     db_path: str = "./data/companies.db"
     message_template_path: str = ""
     message_template: str = ""
+    role_templates_path: str = "./data/message_templates.json"
     employees_per_company: int = 10
     daily_message_limit: int = 50
     delay_between_messages_min: float = 30.0

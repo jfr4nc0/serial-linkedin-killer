@@ -55,7 +55,8 @@ class KafkaResultConsumer:
         try:
             while time.monotonic() < deadline:
                 remaining = deadline - time.monotonic()
-                msg = self._consumer.poll(timeout=min(remaining, 1.0))
+                # Use longer poll timeout for efficiency (5 seconds instead of 1)
+                msg = self._consumer.poll(timeout=min(remaining, 5.0))
 
                 if msg is None:
                     continue

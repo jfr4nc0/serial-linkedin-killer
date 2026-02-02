@@ -13,6 +13,9 @@ from src.core.providers.llm_client import get_llm_client
 ROLE_CATEGORIES = [
     "Engineering",
     "Finance",
+    "Investment Banking / M&A",
+    "Strategy Consulting",
+    "Crypto / Web3",
     "Sales",
     "Marketing",
     "HR/People",

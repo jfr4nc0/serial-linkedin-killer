@@ -92,6 +92,16 @@ class AgentDB:
             )
             return row is not None
 
+    def get_applied_job_ids(self) -> set:
+        """Return all successfully applied job IDs."""
+        with self._session_factory() as session:
+            rows = (
+                session.query(JobApplication.job_id)
+                .filter(JobApplication.success == 1)
+                .all()
+            )
+            return {row[0] for row in rows}
+
     # --- Messages ---
 
     def record_message(

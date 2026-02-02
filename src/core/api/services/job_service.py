@@ -1,14 +1,38 @@
 """Service layer for the job application workflow."""
 
+import atexit
 import gc
-import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from loguru import logger
 
 from src.config.config_loader import load_config
 from src.core.api.schemas.job_schemas import JobApplyRequest, JobApplyResponse
 from src.core.queue.producer import TOPIC_JOB_RESULTS, KafkaResultProducer
+
+# Module-level thread pool with bounded workers
+_executor: ThreadPoolExecutor | None = None
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    """Get or create the shared thread pool executor."""
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="job-apply")
+    return _executor
+
+
+def _shutdown_executor():
+    """Shutdown the thread pool on application exit."""
+    global _executor
+    if _executor is not None:
+        _executor.shutdown(wait=True, cancel_futures=False)
+        _executor = None
+
+
+# Register cleanup on exit
+atexit.register(_shutdown_executor)
 
 
 class JobService:
@@ -22,13 +46,8 @@ class JobService:
         """Submit a job application workflow. Returns task_id immediately."""
         task_id = str(uuid.uuid4())
 
-        thread = threading.Thread(
-            target=self._run,
-            args=(task_id, request),
-            name=f"job-apply-{task_id[:8]}",
-            daemon=True,
-        )
-        thread.start()
+        # Submit to thread pool instead of creating unbounded daemon threads
+        _get_executor().submit(self._run, task_id, request)
 
         return task_id
 
