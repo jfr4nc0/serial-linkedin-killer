@@ -52,11 +52,30 @@ B2B_ROLES = {
 _CLASSIFICATION_PROMPT = """Classify each job title into exactly one of these categories:
 {categories}
 
+Category guidance:
+- B2B / institutional roles (classify by the type of company and seniority):
+  - "Broker_Exchange_HeadOfProduct": Head of Product, Product Director, or similar at brokers, exchanges, or trading platforms.
+  - "WealthManager_PortfolioManager": Portfolio managers, wealth advisors, or investment managers at ALyCs, wealth management firms, or RIAs.
+  - "Fintech_ProductManager": Product managers or product leads at fintech companies, neobanks, or digital wallets.
+  - "FamilyOffice_CIO": CIO, investment director, or senior investment roles at family offices.
+  - "Insurance_HeadOfProduct": Head of Product, product director, or actuarial leads at insurance companies (especially life/savings products).
+  - "Corporate_Treasurer_CFO": Corporate treasurers, CFOs, or heads of treasury at non-financial corporations.
+  - "Boutique_FundManager": Fund managers, portfolio managers, or partners at boutique/independent asset management firms or hedge funds.
+- B2C / individual professional roles:
+  - "Finance": Finance professionals (analysts, accountants, controllers) NOT covered by the B2B categories above.
+  - "Engineering": Software engineers, developers, data engineers, ML engineers, DevOps.
+  - "Investment Banking / M&A": Investment bankers, M&A analysts/associates/VPs at banks or advisory firms.
+  - "Strategy Consulting": Strategy consultants, management consultants at consulting firms.
+  - "Crypto / Web3": Roles explicitly in crypto, blockchain, DeFi, or Web3 companies.
+- Generic roles: Sales, Marketing, HR/People, Operations, Executive, Other.
+
+When in doubt between a B2B category and a generic one, prefer the B2B category if the person's title suggests decision-making authority at a financial institution.
+
 Job titles to classify:
 {titles}
 
 Respond with ONLY a JSON object mapping each title to its category. Example:
-{{"Software Engineer": "Engineering", "CFO": "Executive", "Sales Manager": "Sales"}}
+{{"Software Engineer": "Engineering", "Head of Product at Binance": "Broker_Exchange_HeadOfProduct", "CFO": "Executive"}}
 
 JSON response:"""
 
@@ -186,7 +205,7 @@ def filter_by_segment(
             "Other",
         }
     elif segment == "b2b":
-        allowed = B2B_ROLES | {"Other"}
+        allowed = B2B_ROLES
     else:
         return clustered
     return {k: v for k, v in clustered.items() if k in allowed}

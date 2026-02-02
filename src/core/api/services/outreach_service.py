@@ -99,10 +99,13 @@ class OutreachService:
             from src.core.api.app import get_agent_db
 
             agent = EmployeeOutreachAgent(agent_db=get_agent_db())
+            # When segment filtering is active, don't cap during search —
+            # the limit is applied after filtering to the target segment.
+            search_limit = None if request.segment else request.total_limit
             employees = agent.run_search_only(
                 companies=companies,
                 user_credentials=request.credentials.model_dump(),
-                total_limit=request.total_limit,
+                total_limit=search_limit,
                 exclude_companies=request.exclude_companies,
                 exclude_profile_urls=request.exclude_profile_urls,
             )
@@ -128,6 +131,16 @@ class OutreachService:
 
             clustered = filter_by_segment(clustered, request.segment)
             employees = [e for group in clustered.values() for e in group]
+
+            # Apply total_limit after segment filtering
+            if request.total_limit and len(employees) > request.total_limit:
+                employees = employees[: request.total_limit]
+                # Rebuild clustered dict to match truncated employees
+                emp_urls = {e.get("profile_url") for e in employees}
+                clustered = {
+                    k: [e for e in v if e.get("profile_url") in emp_urls]
+                    for k, v in clustered.items()
+                }
 
         # Store in session for Phase 2
         session_id = self._session_store.create(
