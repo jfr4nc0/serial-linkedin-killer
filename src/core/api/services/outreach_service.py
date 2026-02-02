@@ -21,7 +21,11 @@ from src.core.api.schemas.outreach_schemas import (
     OutreachSendResponse,
 )
 from src.core.api.services.session_store import SessionStore
-from src.core.queue.producer import TOPIC_OUTREACH_RESULTS, KafkaResultProducer
+from src.core.queue.producer import (
+    TOPIC_OUTREACH_RESULTS,
+    TOPIC_OUTREACH_SEARCH_RESULTS,
+    KafkaResultProducer,
+)
 
 # Module-level thread pool with bounded workers
 _executor: ThreadPoolExecutor | None = None
@@ -69,82 +73,136 @@ class OutreachService:
                 total_companies=db.get_total_count(),
             )
 
-    # === Phase 1: Search & Cluster ===
+    # === Phase 1: Search & Cluster (async via Kafka) ===
 
-    def search_and_cluster(
-        self, request: OutreachSearchRequest
-    ) -> OutreachSearchResponse:
-        """Phase 1: Search employees and cluster by role. Synchronous."""
+    def submit_search(self, request: OutreachSearchRequest) -> str:
+        """Phase 1: Submit search & cluster. Returns task_id, results via Kafka."""
+        task_id = str(uuid.uuid4())
+        _get_executor().submit(self._run_search, task_id, request)
+        return task_id
+
+    def _run_search(self, task_id: str, request: OutreachSearchRequest) -> None:
+        """Execute search & cluster and publish results to Kafka."""
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
-        trace_id = str(uuid.uuid4())
-        logger.info("Starting search and cluster", trace_id=trace_id)
+        agent = None
+        try:
+            trace_id = str(uuid.uuid4())
+            logger.info(
+                "Starting search and cluster", task_id=task_id, trace_id=trace_id
+            )
 
-        # Filter companies from DB
-        with CompanyDB(self._config.db.company_url) as db:
-            companies = db.filter_companies(request.filters)
+            # Filter companies from DB
+            with CompanyDB(self._config.db.company_url) as db:
+                companies = db.filter_companies(request.filters)
 
-        if not companies:
-            return OutreachSearchResponse(
+            if request.company_limit and len(companies) > request.company_limit:
+                logger.info(
+                    "Limiting companies",
+                    total_matching=len(companies),
+                    company_limit=request.company_limit,
+                )
+                companies = companies[: request.company_limit]
+
+            if not companies:
+                response = OutreachSearchResponse(
+                    session_id="",
+                    role_groups={},
+                    total_employees=0,
+                    companies_processed=0,
+                    trace_id=trace_id,
+                )
+                self._producer.publish(TOPIC_OUTREACH_SEARCH_RESULTS, task_id, response)
+                return
+
+            # Run search-only phase of the agent
+            from src.core.api.app import get_agent_db
+
+            agent = EmployeeOutreachAgent(agent_db=get_agent_db())
+            # When segment filtering is active, don't cap during search —
+            # the limit is applied after filtering to the target segment.
+            search_limit = None if request.segment else request.total_limit
+            employees = agent.run_search_only(
+                companies=companies,
+                user_credentials=request.credentials.model_dump(),
+                total_limit=search_limit,
+                exclude_companies=request.exclude_companies,
+                exclude_profile_urls=request.exclude_profile_urls,
+            )
+
+            del agent
+            agent = None
+            gc.collect()
+
+            # Safety net: filter out any already-messaged employees (batch query)
+            db = get_agent_db()
+            messaged_urls = db.get_messaged_profile_urls()
+            employees = [
+                emp
+                for emp in employees
+                if emp.get("profile_url", "") not in messaged_urls
+            ]
+
+            # Cluster employees by role using LLM
+            clustered = cluster_employees_by_role(employees)
+
+            # Filter by B2C/B2B segment if requested
+            if request.segment:
+                from src.core.agents.tools.role_clustering import filter_by_segment
+
+                clustered = filter_by_segment(clustered, request.segment)
+                employees = [e for group in clustered.values() for e in group]
+
+                # Apply total_limit after segment filtering
+                if request.total_limit and len(employees) > request.total_limit:
+                    employees = employees[: request.total_limit]
+                    emp_urls = {e.get("profile_url") for e in employees}
+                    clustered = {
+                        k: [e for e in v if e.get("profile_url") in emp_urls]
+                        for k, v in clustered.items()
+                    }
+
+            # Store in session for Phase 2
+            session_id = self._session_store.create(
+                employees=employees,
+                clustered=clustered,
+                companies=companies,
+                trace_id=trace_id,
+            )
+
+            logger.info(
+                "Search and cluster complete",
+                task_id=task_id,
+                trace_id=trace_id,
+                session_id=session_id,
+                total_employees=len(employees),
+                companies=len(companies),
+            )
+
+            response = OutreachSearchResponse(
+                session_id=session_id,
+                role_groups=clustered,
+                total_employees=len(employees),
+                companies_processed=len(companies),
+                trace_id=trace_id,
+            )
+
+        except Exception as e:
+            logger.exception("Search and cluster failed", task_id=task_id)
+            response = OutreachSearchResponse(
                 session_id="",
                 role_groups={},
                 total_employees=0,
                 companies_processed=0,
-                trace_id=trace_id,
-            )
-
-        # Run search-only phase of the agent
-        agent = None
-        try:
-            from src.core.api.app import get_agent_db
-
-            agent = EmployeeOutreachAgent(agent_db=get_agent_db())
-            employees = agent.run_search_only(
-                companies=companies,
-                user_credentials=request.credentials.model_dump(),
-                total_limit=request.total_limit,
-                exclude_companies=request.exclude_companies,
-                exclude_profile_urls=request.exclude_profile_urls,
+                trace_id="",
             )
         finally:
-            del agent
-            gc.collect()
+            if agent is not None:
+                del agent
+                gc.collect()
 
-        # Safety net: filter out any already-messaged employees (batch query)
-        from src.core.api.app import get_agent_db
-
-        db = get_agent_db()
-        messaged_urls = db.get_messaged_profile_urls()
-        employees = [
-            emp for emp in employees if emp.get("profile_url", "") not in messaged_urls
-        ]
-
-        # Cluster employees by role using LLM
-        clustered = cluster_employees_by_role(employees)
-
-        # Store in session for Phase 2
-        session_id = self._session_store.create(
-            employees=employees,
-            clustered=clustered,
-            companies=companies,
-            trace_id=trace_id,
-        )
-
-        logger.info(
-            "Search and cluster complete",
-            trace_id=trace_id,
-            session_id=session_id,
-            total_employees=len(employees),
-            companies=len(companies),
-        )
-
-        return OutreachSearchResponse(
-            session_id=session_id,
-            role_groups=clustered,
-            total_employees=len(employees),
-            companies_processed=len(companies),
-            trace_id=trace_id,
-        )
+        self._producer.publish(TOPIC_OUTREACH_SEARCH_RESULTS, task_id, response)
+        self._producer.flush()
 
     # === Phase 2: Send Messages ===
 

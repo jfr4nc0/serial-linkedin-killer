@@ -577,6 +577,32 @@ class JobApplicationCLI:
                     if limit_input and limit_input.isdigit():
                         total_limit = int(limit_input)
 
+                # Ask for company limit (optional)
+                company_limit = None
+                company_limit_input = (
+                    self.ui.prompt_user_input(
+                        "Max companies to search (leave empty for no limit)"
+                    )
+                    or ""
+                )
+                if company_limit_input.strip().isdigit():
+                    company_limit = int(company_limit_input.strip())
+
+                # Ask for B2C/B2B segment
+                segment = None
+                segment_input = (
+                    (
+                        self.ui.prompt_user_input(
+                            "Focus on [B2C/B2B/both] (default: both)"
+                        )
+                        or ""
+                    )
+                    .strip()
+                    .lower()
+                )
+                if segment_input in ("b2c", "b2b"):
+                    segment = segment_input
+
                 # Collect exclusion lists
                 exclude_companies = self._collect_exclude_urls("companies")
                 exclude_people = self._collect_exclude_urls("people")
@@ -589,6 +615,8 @@ class JobApplicationCLI:
                     filters["size"] = config.outreach.filters.size
                 exclude_companies = []
                 exclude_people = []
+                segment = None
+                company_limit = None
 
             # Credentials
             email = config.linkedin.email or os.getenv("LINKEDIN_EMAIL", "")
@@ -614,6 +642,16 @@ class JobApplicationCLI:
                 self.ui.console.print(
                     f"Total employee limit: [bold yellow]{total_limit}[/bold yellow]\n"
                 )
+            if company_limit is not None:
+                search_payload["company_limit"] = company_limit
+                self.ui.console.print(
+                    f"Company limit: [bold yellow]{company_limit}[/bold yellow]\n"
+                )
+            if segment:
+                search_payload["segment"] = segment
+                self.ui.console.print(
+                    f"Segment: [bold yellow]{segment.upper()}[/bold yellow]\n"
+                )
             if exclude_companies:
                 search_payload["exclude_companies"] = exclude_companies
                 self.ui.console.print(
@@ -629,23 +667,44 @@ class JobApplicationCLI:
             from rich.spinner import Spinner
             from rich.text import Text
 
+            # Submit search (returns immediately with task_id)
+            client = self._get_http_client()
+            resp = client.post(f"{base_url}/api/outreach/search", json=search_payload)
+            resp.raise_for_status()
+            search_task_id = resp.json()["task_id"]
+
+            # Poll Kafka for search results
+            from src.core.api.schemas.outreach_schemas import OutreachSearchResponse
+            from src.core.queue.consumer import KafkaResultConsumer
+            from src.core.queue.producer import TOPIC_OUTREACH_SEARCH_RESULTS
+
+            consumer = KafkaResultConsumer(
+                bootstrap_servers=self._get_kafka_servers(),
+                group_id=f"cli-search-{search_task_id[:8]}",
+            )
+
             with Live(
                 Spinner("dots", text="Searching employees and clustering by role..."),
                 console=self.ui.console,
             ) as live:
-                client = self._get_http_client()
-                # Long timeout for search (uses client's read timeout of 600s)
-                resp = client.post(
-                    f"{base_url}/api/outreach/search", json=search_payload
+                search_result_msg = consumer.consume(
+                    TOPIC_OUTREACH_SEARCH_RESULTS,
+                    search_task_id,
+                    OutreachSearchResponse,
+                    timeout=3600.0,
                 )
-                resp.raise_for_status()
-                search_result = resp.json()
                 live.update(Text("Search complete!", style="bold green"))
 
-            session_id = search_result["session_id"]
-            role_groups = search_result["role_groups"]
-            total_employees = search_result["total_employees"]
-            companies_processed = search_result["companies_processed"]
+            if search_result_msg is None:
+                self.ui.console.print(
+                    "Timed out waiting for search results.", style="red"
+                )
+                return
+
+            session_id = search_result_msg.session_id
+            role_groups = search_result_msg.role_groups
+            total_employees = search_result_msg.total_employees
+            companies_processed = search_result_msg.companies_processed
 
             if not session_id or total_employees == 0:
                 self.ui.console.print(
@@ -708,7 +767,9 @@ class JobApplicationCLI:
                 role_default = None
                 if role in role_templates:
                     tpl = role_templates[role]
-                    role_default = tpl if isinstance(tpl, str) else tpl.get("message", "")
+                    role_default = (
+                        tpl if isinstance(tpl, str) else tpl.get("message", "")
+                    )
                 if not role_default:
                     role_default = default_template
 
@@ -782,7 +843,10 @@ class JobApplicationCLI:
             from src.core.queue.consumer import KafkaResultConsumer
             from src.core.queue.producer import TOPIC_OUTREACH_RESULTS
 
-            consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
+            consumer = KafkaResultConsumer(
+                bootstrap_servers=self._get_kafka_servers(),
+                group_id=f"cli-send-{task_id[:8]}",
+            )
 
             with Live(
                 Spinner("dots", text="Sending messages..."),

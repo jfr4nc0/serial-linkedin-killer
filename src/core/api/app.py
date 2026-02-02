@@ -37,6 +37,12 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database, Kafka producer, and services")
     _agent_db = AgentDB(config.db.url)
     _producer = KafkaResultProducer()
+
+    # Ensure all Kafka topics exist at startup
+    from src.core.queue.config import ensure_topics
+
+    ensure_topics()
+
     _session_store = SessionStore(agent_db=_agent_db, ttl=3600)
     _job_service = JobService(_producer)
     _outreach_service = OutreachService(_producer, _session_store)

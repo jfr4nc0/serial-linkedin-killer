@@ -16,6 +16,13 @@ ROLE_CATEGORIES = [
     "Investment Banking / M&A",
     "Strategy Consulting",
     "Crypto / Web3",
+    "Broker_Exchange_HeadOfProduct",
+    "WealthManager_PortfolioManager",
+    "Fintech_ProductManager",
+    "FamilyOffice_CIO",
+    "Insurance_HeadOfProduct",
+    "Corporate_Treasurer_CFO",
+    "Boutique_FundManager",
     "Sales",
     "Marketing",
     "HR/People",
@@ -24,14 +31,51 @@ ROLE_CATEGORIES = [
     "Other",
 ]
 
+B2C_ROLES = {
+    "Finance",
+    "Engineering",
+    "Investment Banking / M&A",
+    "Strategy Consulting",
+    "Crypto / Web3",
+}
+
+B2B_ROLES = {
+    "Broker_Exchange_HeadOfProduct",
+    "WealthManager_PortfolioManager",
+    "Fintech_ProductManager",
+    "FamilyOffice_CIO",
+    "Insurance_HeadOfProduct",
+    "Corporate_Treasurer_CFO",
+    "Boutique_FundManager",
+}
+
 _CLASSIFICATION_PROMPT = """Classify each job title into exactly one of these categories:
 {categories}
+
+Category guidance:
+- B2B / institutional roles (classify by the type of company and seniority):
+  - "Broker_Exchange_HeadOfProduct": Head of Product, Product Director, or similar at brokers, exchanges, or trading platforms.
+  - "WealthManager_PortfolioManager": Portfolio managers, wealth advisors, or investment managers at ALyCs, wealth management firms, or RIAs.
+  - "Fintech_ProductManager": Product managers or product leads at fintech companies, neobanks, or digital wallets.
+  - "FamilyOffice_CIO": CIO, investment director, or senior investment roles at family offices.
+  - "Insurance_HeadOfProduct": Head of Product, product director, or actuarial leads at insurance companies (especially life/savings products).
+  - "Corporate_Treasurer_CFO": Corporate treasurers, CFOs, or heads of treasury at non-financial corporations.
+  - "Boutique_FundManager": Fund managers, portfolio managers, or partners at boutique/independent asset management firms or hedge funds.
+- B2C / individual professional roles:
+  - "Finance": Finance professionals (analysts, accountants, controllers) NOT covered by the B2B categories above.
+  - "Engineering": Software engineers, developers, data engineers, ML engineers, DevOps.
+  - "Investment Banking / M&A": Investment bankers, M&A analysts/associates/VPs at banks or advisory firms.
+  - "Strategy Consulting": Strategy consultants, management consultants at consulting firms.
+  - "Crypto / Web3": Roles explicitly in crypto, blockchain, DeFi, or Web3 companies.
+- Generic roles: Sales, Marketing, HR/People, Operations, Executive, Other.
+
+When in doubt between a B2B category and a generic one, prefer the B2B category if the person's title suggests decision-making authority at a financial institution.
 
 Job titles to classify:
 {titles}
 
 Respond with ONLY a JSON object mapping each title to its category. Example:
-{{"Software Engineer": "Engineering", "CFO": "Executive", "Sales Manager": "Sales"}}
+{{"Software Engineer": "Engineering", "Head of Product at Binance": "Broker_Exchange_HeadOfProduct", "CFO": "Executive"}}
 
 JSON response:"""
 
@@ -137,3 +181,31 @@ def _classify_titles_with_llm(titles: List[str]) -> Dict[str, str]:
     except Exception as e:
         logger.exception("LLM classification failed", error=str(e))
         return {t: "Other" for t in titles}
+
+
+def filter_by_segment(
+    clustered: Dict[str, List[Dict[str, Any]]], segment: str
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Filter clustered role groups by B2C/B2B segment.
+
+    Args:
+        clustered: Dict mapping role category to list of employees.
+        segment: "b2c", "b2b", or anything else (returns unfiltered).
+
+    Returns:
+        Filtered dict with only the roles belonging to the selected segment.
+    """
+    if segment == "b2c":
+        allowed = B2C_ROLES | {
+            "Sales",
+            "Marketing",
+            "HR/People",
+            "Operations",
+            "Executive",
+            "Other",
+        }
+    elif segment == "b2b":
+        allowed = B2B_ROLES
+    else:
+        return clustered
+    return {k: v for k, v in clustered.items() if k in allowed}

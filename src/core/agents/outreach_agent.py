@@ -11,6 +11,9 @@ from src.core.agents.tools.message_template import render_template
 from src.core.db.agent_db import AgentDB
 from src.core.model.outreach_state import OutreachAgentState
 from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
+from src.core.queue.config import TOPIC_MCP_SEARCH_COMPLETE
+from src.core.queue.consumer import KafkaResultConsumer
+from src.core.queue.schemas import MCPSearchComplete
 from src.core.utils.logging_config import get_core_agent_logger
 
 
@@ -117,12 +120,13 @@ class EmployeeOutreachAgent:
                     f"Excluding {len(exclude_companies)} company URLs",
                 )
 
+            batch_id = str(uuid.uuid4())
             agent_logger.info(
-                f"Batch searching employees at {len(companies_to_search)} companies",
+                f"Batch searching employees at {len(companies_to_search)} companies (batch_id={batch_id})",
             )
 
-            # Single MCP call for all companies (single browser session)
-            batch_results = mcp_client.search_employees_batch(
+            # MCP call returns immediately with batch_id; search runs in background
+            mcp_client.search_employees_batch(
                 companies=companies_to_search,
                 email=state["user_credentials"]["email"],
                 password=state["user_credentials"]["password"],
@@ -130,19 +134,43 @@ class EmployeeOutreachAgent:
                 trace_id=trace_id,
                 exclude_profile_urls=all_exclude_urls if all_exclude_urls else None,
                 exclude_companies=exclude_companies,
+                batch_id=batch_id,
             )
 
-            # Flatten results
-            for result in batch_results:
-                company_name = result.get("company_name", "Unknown")
-                for emp in result.get("employees", []):
-                    emp["company_name"] = company_name
-                all_employees.extend(result.get("employees", []))
+            agent_logger.info(
+                f"MCP accepted batch {batch_id}, waiting for completion via Kafka...",
+            )
 
-                for error in result.get("errors", []):
-                    state["errors"] = state.get("errors", []) + [
-                        f"{company_name}: {error}"
-                    ]
+            # Wait for MCP to publish completion event via Kafka
+            consumer = KafkaResultConsumer(group_id=f"core-agent-{batch_id[:8]}")
+            completion = consumer.consume(
+                TOPIC_MCP_SEARCH_COMPLETE, batch_id, MCPSearchComplete, timeout=3600.0
+            )
+
+            if completion is None:
+                raise Exception(
+                    f"Timed out waiting for batch {batch_id} search completion"
+                )
+            if completion.status == "failed":
+                raise Exception(f"MCP search failed: {completion.error}")
+
+            agent_logger.info(
+                f"MCP search complete: {completion.total_employees} employees across "
+                f"{completion.companies_processed} companies. Reading from DB...",
+            )
+
+            # Read actual employee data from shared DB
+            db_results = self._db.get_search_results(batch_id)
+            for emp in db_results:
+                emp["company_name"] = emp.pop("company_name", "Unknown")
+                emp.pop("company_linkedin_url", None)
+                all_employees.append(emp)
+
+            # Cleanup search results from DB
+            self._db.delete_search_results(batch_id)
+            agent_logger.info(
+                f"Loaded {len(all_employees)} employees from DB, batch cleaned up",
+            )
 
             return {
                 "employees_found": all_employees,

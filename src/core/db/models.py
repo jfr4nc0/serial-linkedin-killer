@@ -1,5 +1,7 @@
 """SQLAlchemy declarative models for all persistent tables."""
 
+import time
+
 from sqlalchemy import Column, Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase
 
@@ -57,3 +59,16 @@ class Company(Base):
     linkedin_url = Column(String)
     website = Column(String)
     founded = Column(String)
+
+
+class SearchResult(Base):
+    __tablename__ = "search_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String, index=True, nullable=False)
+    company_name = Column(String)
+    company_linkedin_url = Column(String)
+    employee_name = Column(String)
+    employee_title = Column(String)
+    employee_profile_url = Column(String)
+    created_at = Column(Float, default=time.time)

@@ -2,6 +2,8 @@ import asyncio
 import threading
 from typing import Any, Dict, List, Optional, Union
 
+from loguru import logger
+
 from src.core.model import ApplicationRequest, ApplicationResult, CVAnalysis, JobResult
 from src.core.providers.linkedin_mcp_client import LinkedInMCPClient
 
@@ -112,8 +114,12 @@ class LinkedInMCPClientSync:
         trace_id: str = None,
         exclude_companies: List[str] = None,
         exclude_profile_urls: List[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Synchronous wrapper for search_employees_batch."""
+        batch_id: str = None,
+    ) -> Dict[str, Any]:
+        """Synchronous wrapper for search_employees_batch.
+
+        Returns summary dict. Actual results are in the shared DB keyed by batch_id.
+        """
 
         async def _search():
             async with self.client as client:
@@ -125,6 +131,7 @@ class LinkedInMCPClientSync:
                     trace_id,
                     exclude_companies=exclude_companies,
                     exclude_profile_urls=exclude_profile_urls,
+                    batch_id=batch_id,
                 )
 
         return self._run(_search())
