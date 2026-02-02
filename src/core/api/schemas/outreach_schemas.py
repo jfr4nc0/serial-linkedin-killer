@@ -42,6 +42,7 @@ class OutreachSearchRequest(BaseModel):
     total_limit: Optional[int] = None
     exclude_companies: Optional[List[str]] = None
     exclude_profile_urls: Optional[List[str]] = None
+    segment: Optional[str] = None  # "b2c", "b2b", or None (both)
 
 
 class OutreachSearchResponse(BaseModel):

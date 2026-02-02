@@ -577,6 +577,21 @@ class JobApplicationCLI:
                     if limit_input and limit_input.isdigit():
                         total_limit = int(limit_input)
 
+                # Ask for B2C/B2B segment
+                segment = None
+                segment_input = (
+                    (
+                        self.ui.prompt_user_input(
+                            "Focus on [B2C/B2B/both] (default: both)"
+                        )
+                        or ""
+                    )
+                    .strip()
+                    .lower()
+                )
+                if segment_input in ("b2c", "b2b"):
+                    segment = segment_input
+
                 # Collect exclusion lists
                 exclude_companies = self._collect_exclude_urls("companies")
                 exclude_people = self._collect_exclude_urls("people")
@@ -589,6 +604,7 @@ class JobApplicationCLI:
                     filters["size"] = config.outreach.filters.size
                 exclude_companies = []
                 exclude_people = []
+                segment = None
 
             # Credentials
             email = config.linkedin.email or os.getenv("LINKEDIN_EMAIL", "")
@@ -613,6 +629,11 @@ class JobApplicationCLI:
                 search_payload["total_limit"] = total_limit
                 self.ui.console.print(
                     f"Total employee limit: [bold yellow]{total_limit}[/bold yellow]\n"
+                )
+            if segment:
+                search_payload["segment"] = segment
+                self.ui.console.print(
+                    f"Segment: [bold yellow]{segment.upper()}[/bold yellow]\n"
                 )
             if exclude_companies:
                 search_payload["exclude_companies"] = exclude_companies
@@ -708,7 +729,9 @@ class JobApplicationCLI:
                 role_default = None
                 if role in role_templates:
                     tpl = role_templates[role]
-                    role_default = tpl if isinstance(tpl, str) else tpl.get("message", "")
+                    role_default = (
+                        tpl if isinstance(tpl, str) else tpl.get("message", "")
+                    )
                 if not role_default:
                     role_default = default_template
 

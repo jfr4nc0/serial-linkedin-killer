@@ -122,6 +122,13 @@ class OutreachService:
         # Cluster employees by role using LLM
         clustered = cluster_employees_by_role(employees)
 
+        # Filter by B2C/B2B segment if requested
+        if request.segment:
+            from src.core.agents.tools.role_clustering import filter_by_segment
+
+            clustered = filter_by_segment(clustered, request.segment)
+            employees = [e for group in clustered.values() for e in group]
+
         # Store in session for Phase 2
         session_id = self._session_store.create(
             employees=employees,

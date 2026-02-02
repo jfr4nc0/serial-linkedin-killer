@@ -16,6 +16,13 @@ ROLE_CATEGORIES = [
     "Investment Banking / M&A",
     "Strategy Consulting",
     "Crypto / Web3",
+    "Broker_Exchange_HeadOfProduct",
+    "WealthManager_PortfolioManager",
+    "Fintech_ProductManager",
+    "FamilyOffice_CIO",
+    "Insurance_HeadOfProduct",
+    "Corporate_Treasurer_CFO",
+    "Boutique_FundManager",
     "Sales",
     "Marketing",
     "HR/People",
@@ -23,6 +30,24 @@ ROLE_CATEGORIES = [
     "Executive",
     "Other",
 ]
+
+B2C_ROLES = {
+    "Finance",
+    "Engineering",
+    "Investment Banking / M&A",
+    "Strategy Consulting",
+    "Crypto / Web3",
+}
+
+B2B_ROLES = {
+    "Broker_Exchange_HeadOfProduct",
+    "WealthManager_PortfolioManager",
+    "Fintech_ProductManager",
+    "FamilyOffice_CIO",
+    "Insurance_HeadOfProduct",
+    "Corporate_Treasurer_CFO",
+    "Boutique_FundManager",
+}
 
 _CLASSIFICATION_PROMPT = """Classify each job title into exactly one of these categories:
 {categories}
@@ -137,3 +162,31 @@ def _classify_titles_with_llm(titles: List[str]) -> Dict[str, str]:
     except Exception as e:
         logger.exception("LLM classification failed", error=str(e))
         return {t: "Other" for t in titles}
+
+
+def filter_by_segment(
+    clustered: Dict[str, List[Dict[str, Any]]], segment: str
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Filter clustered role groups by B2C/B2B segment.
+
+    Args:
+        clustered: Dict mapping role category to list of employees.
+        segment: "b2c", "b2b", or anything else (returns unfiltered).
+
+    Returns:
+        Filtered dict with only the roles belonging to the selected segment.
+    """
+    if segment == "b2c":
+        allowed = B2C_ROLES | {
+            "Sales",
+            "Marketing",
+            "HR/People",
+            "Operations",
+            "Executive",
+            "Other",
+        }
+    elif segment == "b2b":
+        allowed = B2B_ROLES | {"Other"}
+    else:
+        return clustered
+    return {k: v for k, v in clustered.items() if k in allowed}
