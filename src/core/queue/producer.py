@@ -10,6 +10,7 @@ from src.config.config_loader import load_config
 
 TOPIC_JOB_RESULTS = "job-results"
 TOPIC_OUTREACH_RESULTS = "outreach-results"
+TOPIC_OUTREACH_SEARCH_RESULTS = "outreach-search-results"
 
 
 class KafkaResultProducer:

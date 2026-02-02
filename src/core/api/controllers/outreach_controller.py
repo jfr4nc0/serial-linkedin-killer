@@ -7,7 +7,6 @@ from src.core.api.schemas.outreach_schemas import (
     OutreachFiltersResponse,
     OutreachRunRequest,
     OutreachSearchRequest,
-    OutreachSearchResponse,
     OutreachSendRequest,
 )
 from src.core.api.services.outreach_service import OutreachService
@@ -39,13 +38,14 @@ def run_outreach(
     return TaskResponse(task_id=task_id)
 
 
-@router.post("/search", response_model=OutreachSearchResponse)
+@router.post("/search", response_model=TaskResponse)
 def search_employees(
     request: OutreachSearchRequest,
     service: OutreachService = Depends(get_outreach_service),
-) -> OutreachSearchResponse:
-    """Phase 1: Search employees and cluster by role. Synchronous, returns clustered groups."""
-    return service.search_and_cluster(request)
+) -> TaskResponse:
+    """Phase 1: Submit search & cluster. Returns task_id, results via Kafka."""
+    task_id = service.submit_search(request)
+    return TaskResponse(task_id=task_id)
 
 
 @router.post("/send", response_model=TaskResponse)

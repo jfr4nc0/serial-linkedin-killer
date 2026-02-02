@@ -650,23 +650,41 @@ class JobApplicationCLI:
             from rich.spinner import Spinner
             from rich.text import Text
 
+            # Submit search (returns immediately with task_id)
+            client = self._get_http_client()
+            resp = client.post(f"{base_url}/api/outreach/search", json=search_payload)
+            resp.raise_for_status()
+            search_task_id = resp.json()["task_id"]
+
+            # Poll Kafka for search results
+            from src.core.api.schemas.outreach_schemas import OutreachSearchResponse
+            from src.core.queue.consumer import KafkaResultConsumer
+            from src.core.queue.producer import TOPIC_OUTREACH_SEARCH_RESULTS
+
+            consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
+
             with Live(
                 Spinner("dots", text="Searching employees and clustering by role..."),
                 console=self.ui.console,
             ) as live:
-                client = self._get_http_client()
-                # Long timeout for search (uses client's read timeout of 600s)
-                resp = client.post(
-                    f"{base_url}/api/outreach/search", json=search_payload
+                search_result_msg = consumer.consume(
+                    TOPIC_OUTREACH_SEARCH_RESULTS,
+                    search_task_id,
+                    OutreachSearchResponse,
+                    timeout=1200.0,
                 )
-                resp.raise_for_status()
-                search_result = resp.json()
                 live.update(Text("Search complete!", style="bold green"))
 
-            session_id = search_result["session_id"]
-            role_groups = search_result["role_groups"]
-            total_employees = search_result["total_employees"]
-            companies_processed = search_result["companies_processed"]
+            if search_result_msg is None:
+                self.ui.console.print(
+                    "Timed out waiting for search results.", style="red"
+                )
+                return
+
+            session_id = search_result_msg.session_id
+            role_groups = search_result_msg.role_groups
+            total_employees = search_result_msg.total_employees
+            companies_processed = search_result_msg.companies_processed
 
             if not session_id or total_employees == 0:
                 self.ui.console.print(
