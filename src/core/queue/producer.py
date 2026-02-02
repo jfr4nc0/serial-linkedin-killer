@@ -3,15 +3,15 @@
 import json
 
 from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
 from loguru import logger
 from pydantic import BaseModel
 
 from src.config.config_loader import load_config
-
-TOPIC_JOB_RESULTS = "job-results"
-TOPIC_OUTREACH_RESULTS = "outreach-results"
-TOPIC_OUTREACH_SEARCH_RESULTS = "outreach-search-results"
+from src.core.queue.config import (  # noqa: F401 - re-exported
+    TOPIC_JOB_RESULTS,
+    TOPIC_OUTREACH_RESULTS,
+    TOPIC_OUTREACH_SEARCH_RESULTS,
+)
 
 
 class KafkaResultProducer:
@@ -30,25 +30,6 @@ class KafkaResultProducer:
             }
         )
         self._pending = 0
-        self._servers = servers
-        self._ensured_topics: set[str] = set()
-
-    def _ensure_topic(self, topic: str) -> None:
-        """Create topic if it doesn't exist yet."""
-        if topic in self._ensured_topics:
-            return
-        try:
-            admin = AdminClient({"bootstrap.servers": self._servers})
-            metadata = admin.list_topics(timeout=5)
-            if topic not in metadata.topics:
-                futures = admin.create_topics(
-                    [NewTopic(topic, num_partitions=1, replication_factor=1)]
-                )
-                futures[topic].result(timeout=10)
-                logger.info("Created Kafka topic", topic=topic)
-            self._ensured_topics.add(topic)
-        except Exception as e:
-            logger.warning("Failed to ensure Kafka topic", topic=topic, error=str(e))
 
     def _delivery_report(self, err, msg):
         if err:
@@ -65,7 +46,6 @@ class KafkaResultProducer:
 
         Messages are batched for better throughput. Use flush() to ensure delivery.
         """
-        self._ensure_topic(topic)
         self._producer.produce(
             topic=topic,
             key=key.encode(),

@@ -96,6 +96,14 @@ class OutreachService:
             with CompanyDB(self._config.db.company_url) as db:
                 companies = db.filter_companies(request.filters)
 
+            if request.company_limit and len(companies) > request.company_limit:
+                logger.info(
+                    "Limiting companies",
+                    total_matching=len(companies),
+                    company_limit=request.company_limit,
+                )
+                companies = companies[: request.company_limit]
+
             if not companies:
                 response = OutreachSearchResponse(
                     session_id="",
@@ -194,6 +202,7 @@ class OutreachService:
                 gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_SEARCH_RESULTS, task_id, response)
+        self._producer.flush()
 
     # === Phase 2: Send Messages ===
 

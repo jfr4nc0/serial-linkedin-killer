@@ -24,8 +24,9 @@ from src.linkedin_mcp.utils.logging_config import get_mcp_logger
 class EmployeeOutreachService(IEmployeeOutreachService):
     """Orchestrates authentication, employee search, and message sending."""
 
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: str = None, session_factory=None):
         self.config = load_config(config_path)
+        self._session_factory = session_factory
         self.browser_manager = BrowserManager(
             headless=self.config.browser.headless,
             use_undetected=self.config.browser.use_undetected,
@@ -86,7 +87,8 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         total_limit: int = None,
         exclude_companies: List[str] = None,
         exclude_profile_urls: List[str] = None,
-    ) -> List[BatchEmployeeSearchResult]:
+        batch_id: str = None,
+    ) -> dict:
         """Search employees across multiple companies with a SINGLE browser session.
 
         Args:
@@ -145,6 +147,26 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                                 f"Filtered {before - len(employees)} already-messaged employees from {company['company_name']}"
                             )
                     total_collected += len(employees)
+                    # Write to shared DB if session_factory available
+                    if self._session_factory and batch_id and employees:
+                        from src.core.db.models import SearchResult
+
+                        with self._session_factory() as db_session:
+                            for emp in employees:
+                                db_session.add(
+                                    SearchResult(
+                                        batch_id=batch_id,
+                                        company_name=company["company_name"],
+                                        company_linkedin_url=company[
+                                            "company_linkedin_url"
+                                        ],
+                                        employee_name=emp.get("name", ""),
+                                        employee_title=emp.get("title", ""),
+                                        employee_profile_url=emp.get("profile_url", ""),
+                                        created_at=time.time(),
+                                    )
+                                )
+                            db_session.commit()
                     results.append(
                         BatchEmployeeSearchResult(
                             company_name=company["company_name"],
@@ -169,7 +191,11 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                     delay = random.uniform(0.5, 1)
                     time.sleep(delay)
 
-            return results
+            return {
+                "batch_id": batch_id or "",
+                "total_employees": total_collected,
+                "companies_processed": len(results),
+            }
 
         except Exception as e:
             raise Exception(f"Batch employee search failed: {str(e)}")
@@ -177,6 +203,68 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         finally:
             if self.browser_manager:
                 self.browser_manager.close_browser()
+
+    def submit_search_batch(
+        self,
+        companies: List[CompanySearchRequest],
+        user_credentials: Dict[str, str],
+        batch_id: str,
+        trace_id: str = "",
+        total_limit: int = None,
+        exclude_companies: List[str] = None,
+        exclude_profile_urls: List[str] = None,
+    ) -> dict:
+        """Return batch_id immediately, run search in background thread.
+
+        When done, publishes MCPSearchComplete to Kafka.
+        """
+        import threading
+
+        from src.core.queue.config import TOPIC_MCP_SEARCH_COMPLETE
+        from src.core.queue.producer import KafkaResultProducer
+        from src.core.queue.schemas import MCPSearchComplete
+
+        logger = get_mcp_logger(trace_id or None)
+
+        def _run():
+            try:
+                summary = self.search_employees_batch(
+                    companies,
+                    user_credentials,
+                    total_limit=total_limit,
+                    exclude_companies=exclude_companies,
+                    exclude_profile_urls=exclude_profile_urls,
+                    batch_id=batch_id,
+                )
+                complete = MCPSearchComplete(
+                    batch_id=batch_id,
+                    status="completed",
+                    total_employees=summary["total_employees"],
+                    companies_processed=summary["companies_processed"],
+                    trace_id=trace_id,
+                )
+            except Exception as e:
+                logger.error(f"Background search failed: {e}")
+                complete = MCPSearchComplete(
+                    batch_id=batch_id,
+                    status="failed",
+                    total_employees=0,
+                    companies_processed=0,
+                    error=str(e),
+                    trace_id=trace_id,
+                )
+            producer = KafkaResultProducer()
+            producer.publish(TOPIC_MCP_SEARCH_COMPLETE, batch_id, complete)
+            producer.flush()
+            logger.info(
+                f"Published MCPSearchComplete for batch {batch_id}: {complete.status}"
+            )
+
+        threading.Thread(
+            target=_run, daemon=True, name=f"search-{batch_id[:8]}"
+        ).start()
+        logger.info(f"Submitted batch search {batch_id} to background thread")
+        return {"batch_id": batch_id}
 
     def send_message(
         self,

@@ -8,7 +8,13 @@ from typing import Any, Dict, Optional, Union
 from sqlalchemy import Engine
 
 from src.core.db.engine import create_db_engine, create_session_factory
-from src.core.db.models import DailyQuota, JobApplication, MessageSent, SessionModel
+from src.core.db.models import (
+    DailyQuota,
+    JobApplication,
+    MessageSent,
+    SearchResult,
+    SessionModel,
+)
 
 
 class AgentDB:
@@ -166,3 +172,58 @@ class AgentDB:
                 session.add(row)
             session.commit()
             return row.count
+
+    # --- Search Results ---
+
+    def save_search_results(
+        self,
+        batch_id: str,
+        company_name: str,
+        company_linkedin_url: str,
+        employees: list,
+    ) -> None:
+        """Bulk insert employees for a company into search_results."""
+        with self._session_factory() as session:
+            for emp in employees:
+                session.add(
+                    SearchResult(
+                        batch_id=batch_id,
+                        company_name=company_name,
+                        company_linkedin_url=company_linkedin_url,
+                        employee_name=emp.get("name", ""),
+                        employee_title=emp.get("title", ""),
+                        employee_profile_url=emp.get("profile_url", ""),
+                        created_at=time.time(),
+                    )
+                )
+            session.commit()
+
+    def get_search_results(self, batch_id: str) -> list:
+        """Read all employees for a batch_id, returned as list of dicts."""
+        with self._session_factory() as session:
+            rows = (
+                session.query(SearchResult)
+                .filter(SearchResult.batch_id == batch_id)
+                .all()
+            )
+            return [
+                {
+                    "company_name": r.company_name,
+                    "company_linkedin_url": r.company_linkedin_url,
+                    "name": r.employee_name,
+                    "title": r.employee_title,
+                    "profile_url": r.employee_profile_url,
+                }
+                for r in rows
+            ]
+
+    def delete_search_results(self, batch_id: str) -> int:
+        """Delete all search results for a batch_id."""
+        with self._session_factory() as session:
+            count = (
+                session.query(SearchResult)
+                .filter(SearchResult.batch_id == batch_id)
+                .delete()
+            )
+            session.commit()
+            return count

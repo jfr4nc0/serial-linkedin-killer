@@ -36,10 +36,18 @@ log_mcp_server_startup(
     }
 )
 
+# Initialize shared DB for search results
+from src.config.config_loader import load_config as _load_config
+from src.core.db.engine import create_db_engine, create_session_factory
+
+_config = _load_config()
+_engine = create_db_engine(_config.db.url)
+_session_factory = create_session_factory(_engine)
+
 # Initialize services
 job_search_service = JobSearchService()
 job_application_service = JobApplicationService()
-employee_outreach_service = EmployeeOutreachService()
+employee_outreach_service = EmployeeOutreachService(session_factory=_session_factory)
 
 # Register all MCP tools
 register_all_tools(

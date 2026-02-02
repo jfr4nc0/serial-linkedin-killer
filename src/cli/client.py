@@ -577,6 +577,17 @@ class JobApplicationCLI:
                     if limit_input and limit_input.isdigit():
                         total_limit = int(limit_input)
 
+                # Ask for company limit (optional)
+                company_limit = None
+                company_limit_input = (
+                    self.ui.prompt_user_input(
+                        "Max companies to search (leave empty for no limit)"
+                    )
+                    or ""
+                )
+                if company_limit_input.strip().isdigit():
+                    company_limit = int(company_limit_input.strip())
+
                 # Ask for B2C/B2B segment
                 segment = None
                 segment_input = (
@@ -605,6 +616,7 @@ class JobApplicationCLI:
                 exclude_companies = []
                 exclude_people = []
                 segment = None
+                company_limit = None
 
             # Credentials
             email = config.linkedin.email or os.getenv("LINKEDIN_EMAIL", "")
@@ -629,6 +641,11 @@ class JobApplicationCLI:
                 search_payload["total_limit"] = total_limit
                 self.ui.console.print(
                     f"Total employee limit: [bold yellow]{total_limit}[/bold yellow]\n"
+                )
+            if company_limit is not None:
+                search_payload["company_limit"] = company_limit
+                self.ui.console.print(
+                    f"Company limit: [bold yellow]{company_limit}[/bold yellow]\n"
                 )
             if segment:
                 search_payload["segment"] = segment
@@ -661,7 +678,10 @@ class JobApplicationCLI:
             from src.core.queue.consumer import KafkaResultConsumer
             from src.core.queue.producer import TOPIC_OUTREACH_SEARCH_RESULTS
 
-            consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
+            consumer = KafkaResultConsumer(
+                bootstrap_servers=self._get_kafka_servers(),
+                group_id=f"cli-search-{search_task_id[:8]}",
+            )
 
             with Live(
                 Spinner("dots", text="Searching employees and clustering by role..."),
@@ -671,7 +691,7 @@ class JobApplicationCLI:
                     TOPIC_OUTREACH_SEARCH_RESULTS,
                     search_task_id,
                     OutreachSearchResponse,
-                    timeout=1200.0,
+                    timeout=3600.0,
                 )
                 live.update(Text("Search complete!", style="bold green"))
 
@@ -823,7 +843,10 @@ class JobApplicationCLI:
             from src.core.queue.consumer import KafkaResultConsumer
             from src.core.queue.producer import TOPIC_OUTREACH_RESULTS
 
-            consumer = KafkaResultConsumer(bootstrap_servers=self._get_kafka_servers())
+            consumer = KafkaResultConsumer(
+                bootstrap_servers=self._get_kafka_servers(),
+                group_id=f"cli-send-{task_id[:8]}",
+            )
 
             with Live(
                 Spinner("dots", text="Sending messages..."),

@@ -186,8 +186,13 @@ class LinkedInMCPClient:
         trace_id: str = None,
         exclude_companies: List[str] = None,
         exclude_profile_urls: List[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Search employees across multiple companies in a single browser session."""
+        batch_id: str = None,
+    ) -> Dict[str, Any]:
+        """Search employees across multiple companies in a single browser session.
+
+        Returns a summary dict {batch_id, total_employees, companies_processed}.
+        Actual employee data is written to the shared DB keyed by batch_id.
+        """
         arguments = {
             "companies": companies,
             "email": email,
@@ -199,6 +204,8 @@ class LinkedInMCPClient:
             arguments["exclude_companies"] = exclude_companies
         if exclude_profile_urls:
             arguments["exclude_profile_urls"] = exclude_profile_urls
+        if batch_id:
+            arguments["batch_id"] = batch_id
         if trace_id:
             arguments["trace_id"] = trace_id
 

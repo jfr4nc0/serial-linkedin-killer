@@ -109,8 +109,9 @@ def register_employee_tools(mcp, employee_outreach_service):
         total_limit: int = None,
         exclude_companies: list[str] = None,
         exclude_profile_urls: list[str] = None,
+        batch_id: str = None,
         trace_id: str = None,
-    ) -> list[dict]:
+    ) -> dict:
         """
         Search employees across multiple companies in a single browser session.
         Much more efficient than calling search_employees per company.
@@ -139,19 +140,19 @@ def register_employee_tools(mcp, employee_outreach_service):
             )
 
         user_credentials = {"email": email, "password": password}
-        result = employee_outreach_service.search_employees_batch(
+        result = employee_outreach_service.submit_search_batch(
             companies,
             user_credentials,
+            batch_id=batch_id or str(__import__("uuid").uuid4()),
+            trace_id=trace_id or "",
             total_limit=total_limit,
             exclude_companies=exclude_companies,
             exclude_profile_urls=exclude_profile_urls,
         )
 
         if trace_id:
-            total_employees = sum(len(r.get("employees", [])) for r in result)
             logger.info(
-                f"Batch employee search completed: {total_employees} employees across {len(companies)} companies",
-                total_employees=total_employees,
+                f"Batch search submitted, batch_id={result['batch_id']}",
                 trace_id=trace_id,
             )
 
