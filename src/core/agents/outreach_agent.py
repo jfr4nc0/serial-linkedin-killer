@@ -7,6 +7,7 @@ from langgraph.graph import END, StateGraph
 from loguru import logger
 
 from src.config.config_loader import load_config
+from src.config.trace_context import get_trace_id
 from src.core.agents.tools.message_template import render_template
 from src.core.db.agent_db import AgentDB
 from src.core.model.outreach_state import OutreachAgentState
@@ -14,7 +15,6 @@ from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
 from src.core.queue.config import TOPIC_MCP_SEARCH_COMPLETE
 from src.core.queue.consumer import KafkaResultConsumer
 from src.core.queue.schemas import MCPSearchComplete
-from src.core.utils.logging_config import get_core_agent_logger
 
 
 class EmployeeOutreachAgent:
@@ -72,8 +72,8 @@ class EmployeeOutreachAgent:
 
     def search_employees_node(self, state: OutreachAgentState) -> Dict[str, Any]:
         """Search for employees at all filtered companies via single batch MCP call."""
-        trace_id = state.get("trace_id", str(uuid.uuid4()))
-        agent_logger = get_core_agent_logger(trace_id)
+        # Use trace_id from context (set by outreach_service)
+        trace_id = get_trace_id()
 
         all_employees = []
         mcp_client = None
@@ -88,7 +88,7 @@ class EmployeeOutreachAgent:
                 linkedin_url = company.get("linkedin_url", "")
                 company_name = company.get("name", "Unknown")
                 if not linkedin_url:
-                    agent_logger.warning(f"Skipping {company_name}: no linkedin_url")
+                    logger.warning(f"Skipping {company_name}: no linkedin_url")
                     continue
                 companies_to_search.append(
                     {
@@ -109,19 +109,19 @@ class EmployeeOutreachAgent:
             user_exclude_urls = state.get("exclude_profile_urls") or []
             all_exclude_urls = list(set(messaged_urls + user_exclude_urls))
             if all_exclude_urls:
-                agent_logger.info(
+                logger.info(
                     f"Excluding {len(all_exclude_urls)} profile URLs "
                     f"({len(messaged_urls)} already-messaged, {len(user_exclude_urls)} user-provided)",
                 )
 
             exclude_companies = state.get("exclude_companies")
             if exclude_companies:
-                agent_logger.info(
+                logger.info(
                     f"Excluding {len(exclude_companies)} company URLs",
                 )
 
             batch_id = str(uuid.uuid4())
-            agent_logger.info(
+            logger.info(
                 f"Batch searching employees at {len(companies_to_search)} companies (batch_id={batch_id})",
             )
 
@@ -137,7 +137,7 @@ class EmployeeOutreachAgent:
                 batch_id=batch_id,
             )
 
-            agent_logger.info(
+            logger.info(
                 f"MCP accepted batch {batch_id}, waiting for completion via Kafka...",
             )
 
@@ -154,7 +154,7 @@ class EmployeeOutreachAgent:
             if completion.status == "failed":
                 raise Exception(f"MCP search failed: {completion.error}")
 
-            agent_logger.info(
+            logger.info(
                 f"MCP search complete: {completion.total_employees} employees across "
                 f"{completion.companies_processed} companies. Reading from DB...",
             )
@@ -168,7 +168,7 @@ class EmployeeOutreachAgent:
 
             # Cleanup search results from DB
             self._db.delete_search_results(batch_id)
-            agent_logger.info(
+            logger.info(
                 f"Loaded {len(all_employees)} employees from DB, batch cleaned up",
             )
 
@@ -186,8 +186,7 @@ class EmployeeOutreachAgent:
 
     def send_messages_node(self, state: OutreachAgentState) -> Dict[str, Any]:
         """Send messages to all found employees via MCP (legacy single-template mode)."""
-        trace_id = state.get("trace_id", str(uuid.uuid4()))
-        agent_logger = get_core_agent_logger(trace_id)
+        trace_id = get_trace_id()
 
         message_results = []
         messages_sent = self._db.get_daily_quota()
@@ -205,12 +204,12 @@ class EmployeeOutreachAgent:
 
             for employee in state["employees_found"]:
                 if messages_sent >= daily_limit:
-                    agent_logger.info(f"Daily message limit reached ({daily_limit})")
+                    logger.info(f"Daily message limit reached ({daily_limit})")
                     break
 
                 profile_url = employee.get("profile_url", "")
                 if profile_url in messaged_urls:
-                    agent_logger.info(
+                    logger.info(
                         f"Skipping {employee.get('name', '')}: already messaged"
                     )
                     continue
@@ -225,7 +224,7 @@ class EmployeeOutreachAgent:
                 message_text = render_template(template, variables)
 
                 try:
-                    agent_logger.info(
+                    logger.info(
                         f"Sending message to {employee.get('name', '')} at {employee.get('company_name', '')}",
                     )
 
@@ -252,7 +251,7 @@ class EmployeeOutreachAgent:
 
                 except Exception as e:
                     error_msg = f"Failed to send message to {employee.get('name', '')}: {str(e)}"
-                    agent_logger.error(error_msg)
+                    logger.error(error_msg)
                     self._db.record_message(
                         profile_url,
                         employee.get("name", ""),
@@ -295,8 +294,7 @@ class EmployeeOutreachAgent:
         - _template_vars: static variables for this template
         - _role: role category for result grouping
         """
-        trace_id = state.get("trace_id", str(uuid.uuid4()))
-        agent_logger = get_core_agent_logger(trace_id)
+        trace_id = get_trace_id()
 
         message_results = []
         messages_sent = self._db.get_daily_quota()
@@ -312,12 +310,12 @@ class EmployeeOutreachAgent:
 
             for employee in state["employees_found"]:
                 if messages_sent >= daily_limit:
-                    agent_logger.info(f"Daily message limit reached ({daily_limit})")
+                    logger.info(f"Daily message limit reached ({daily_limit})")
                     break
 
                 profile_url = employee.get("profile_url", "")
                 if profile_url in messaged_urls:
-                    agent_logger.info(
+                    logger.info(
                         f"Skipping {employee.get('name', '')}: already messaged"
                     )
                     continue
@@ -328,7 +326,7 @@ class EmployeeOutreachAgent:
                 role = employee.get("_role", "Other")
 
                 if not template:
-                    agent_logger.warning(
+                    logger.warning(
                         f"No template for employee {employee.get('name', '')}"
                     )
                     continue
@@ -343,7 +341,7 @@ class EmployeeOutreachAgent:
                 message_text = render_template(template, variables)
 
                 try:
-                    agent_logger.info(
+                    logger.info(
                         f"Sending message to {employee.get('name', '')} ({role}) at {employee.get('company_name', '')}",
                     )
 
@@ -373,7 +371,7 @@ class EmployeeOutreachAgent:
 
                 except Exception as e:
                     error_msg = f"Failed to send message to {employee.get('name', '')}: {str(e)}"
-                    agent_logger.error(error_msg)
+                    logger.error(error_msg)
                     self._db.record_message(
                         profile_url,
                         employee.get("name", ""),
@@ -429,16 +427,16 @@ class EmployeeOutreachAgent:
         Returns:
             List of employee dicts found
         """
-        trace_id = str(uuid.uuid4())
+        # Use trace_id from context (set by outreach_service)
+        trace_id = get_trace_id()
 
-        agent_logger = get_core_agent_logger(trace_id)
-        agent_logger.info(
+        logger.info(
             "Starting search-only phase",
             companies_count=len(companies),
         )
 
         if total_limit is not None:
-            agent_logger.info(f"Total employee limit: {total_limit}")
+            logger.info(f"Total employee limit: {total_limit}")
 
         initial_state = OutreachAgentState(
             companies=companies,
@@ -460,7 +458,7 @@ class EmployeeOutreachAgent:
 
         final_state = self._search_graph.invoke(initial_state)
 
-        agent_logger.info(
+        logger.info(
             "Search phase completed",
             employees_found=len(final_state.get("employees_found", [])),
         )
@@ -482,15 +480,15 @@ class EmployeeOutreachAgent:
             employees_with_templates: Employees with _template, _template_vars, _role fields
             user_credentials: LinkedIn credentials {email, password}
             daily_limit: Maximum messages to send
-            trace_id: Optional trace ID for logging correlation
+            trace_id: Deprecated - trace_id is now read from context
 
         Returns:
             Final agent state with message_results
         """
-        trace_id = trace_id or str(uuid.uuid4())
+        # Use trace_id from context (set by outreach_service)
+        trace_id = get_trace_id()
 
-        agent_logger = get_core_agent_logger(trace_id)
-        agent_logger.info(
+        logger.info(
             "Starting send phase",
             employees_count=len(employees_with_templates),
             daily_limit=daily_limit,
@@ -516,7 +514,7 @@ class EmployeeOutreachAgent:
 
         final_state = self._send_graph.invoke(initial_state)
 
-        agent_logger.info(
+        logger.info(
             "Send phase completed",
             messages_sent=final_state.get("messages_sent_today", 0),
         )
@@ -543,10 +541,14 @@ class EmployeeOutreachAgent:
         Returns:
             Final agent state with all results
         """
-        trace_id = str(uuid.uuid4())
+        from src.config.trace_context import set_trace_id
 
-        agent_logger = get_core_agent_logger(trace_id)
-        agent_logger.info(
+        # For legacy full workflow, generate trace_id if not already set
+        trace_id = get_trace_id()
+        if trace_id == "no-trace":
+            trace_id = set_trace_id()
+
+        logger.info(
             "Starting outreach agent (full workflow)",
             companies_count=len(companies),
         )
@@ -571,7 +573,7 @@ class EmployeeOutreachAgent:
 
         final_state = self._full_graph.invoke(initial_state)
 
-        agent_logger.info(
+        logger.info(
             "Outreach agent completed",
             employees_found=len(final_state.get("employees_found", [])),
             messages_sent=final_state.get("messages_sent_today", 0),

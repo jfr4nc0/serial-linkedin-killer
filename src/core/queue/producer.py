@@ -46,10 +46,23 @@ class KafkaResultProducer:
 
         Messages are batched for better throughput. Use flush() to ensure delivery.
         """
+        import time
+
+        t_start = time.perf_counter()
+        json_bytes = value.model_dump_json().encode()
+        t_serialized = time.perf_counter()
+
+        # trace_id auto-injected from context
+        logger.info(
+            "[TIMING] Pydantic serialization",
+            elapsed_ms=round((t_serialized - t_start) * 1000, 2),
+            payload_bytes=len(json_bytes),
+        )
+
         self._producer.produce(
             topic=topic,
             key=key.encode(),
-            value=value.model_dump_json().encode(),
+            value=json_bytes,
             callback=self._delivery_report,
         )
         self._pending += 1

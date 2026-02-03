@@ -4,7 +4,10 @@ import random
 import time
 from typing import Dict, List
 
+from loguru import logger
+
 from src.config.config_loader import load_config
+from src.config.trace_context import set_trace_id
 from src.linkedin_mcp.graphs.employee_search_graph import EmployeeSearchGraph
 from src.linkedin_mcp.graphs.message_send_graph import MessageSendGraph
 from src.linkedin_mcp.interfaces.services import IEmployeeOutreachService
@@ -18,7 +21,6 @@ from src.linkedin_mcp.services.browser_manager_service import (
     BrowserManagerService as BrowserManager,
 )
 from src.linkedin_mcp.services.linkedin_auth_service import LinkedInAuthService
-from src.linkedin_mcp.utils.logging_config import get_mcp_logger
 
 
 class EmployeeOutreachService(IEmployeeOutreachService):
@@ -88,6 +90,7 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         exclude_companies: List[str] = None,
         exclude_profile_urls: List[str] = None,
         batch_id: str = None,
+        trace_id: str = None,
     ) -> dict:
         """Search employees across multiple companies with a SINGLE browser session.
 
@@ -96,8 +99,12 @@ class EmployeeOutreachService(IEmployeeOutreachService):
             user_credentials: LinkedIn credentials
             total_limit: Optional max total employees across all companies.
                          When set, stops searching once this many employees are collected.
+            trace_id: Trace ID for distributed tracing (propagated from caller).
         """
-        logger = get_mcp_logger()
+        # Set trace context for this request (auto-propagates to all logs)
+        if trace_id:
+            set_trace_id(trace_id)
+
         exclude_companies_set = set(exclude_companies or [])
         exclude_urls_set = set(exclude_profile_urls or [])
         try:
@@ -238,9 +245,15 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         from src.core.queue.producer import KafkaResultProducer
         from src.core.queue.schemas import MCPSearchComplete
 
-        logger = get_mcp_logger(trace_id or None)
+        # Set trace context for this request
+        if trace_id:
+            set_trace_id(trace_id)
 
         def _run():
+            # Re-set trace context in background thread (contextvars are thread-local)
+            if trace_id:
+                set_trace_id(trace_id)
+
             try:
                 summary = self.search_employees_batch(
                     companies,
@@ -249,6 +262,7 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                     exclude_companies=exclude_companies,
                     exclude_profile_urls=exclude_profile_urls,
                     batch_id=batch_id,
+                    trace_id=trace_id,
                 )
                 complete = MCPSearchComplete(
                     batch_id=batch_id,

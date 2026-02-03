@@ -8,6 +8,7 @@ from typing import Optional
 from loguru import logger
 
 from src.config.config_loader import load_config
+from src.config.trace_context import set_trace_id, trace_context
 from src.core.agents.tools.company_db import CompanyDB
 from src.core.agents.tools.role_clustering import cluster_employees_by_role
 from src.core.api.schemas.outreach_schemas import (
@@ -92,13 +93,16 @@ class OutreachService:
 
     def _run_search(self, task_id: str, request: OutreachSearchRequest) -> None:
         """Execute search & cluster and publish results to Kafka."""
+        import time
+
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
+        # Set trace context for this entire request (auto-propagates to all logs)
+        trace_id = set_trace_id()
+
         try:
-            trace_id = str(uuid.uuid4())
-            logger.info(
-                "Starting search and cluster", task_id=task_id, trace_id=trace_id
-            )
+            t_start = time.perf_counter()
+            logger.info("Starting search and cluster", task_id=task_id)
 
             # Filter companies from DB
             with CompanyDB(self._config.db.company_url) as db:
@@ -138,8 +142,29 @@ class OutreachService:
                 exclude_profile_urls=request.exclude_profile_urls,
             )
 
-            # Cluster employees by role using LLM
-            clustered = cluster_employees_by_role(employees)
+            t_pre_cluster = time.perf_counter()
+            logger.info(
+                "[TIMING] Pre-clustering",
+                elapsed_ms=round((t_pre_cluster - t_start) * 1000, 2),
+                employees_count=len(employees),
+            )
+
+            # Cluster employees by role using LLM (with progress logging)
+            def log_progress(batch: int, total: int, processed: int, total_titles: int):
+                logger.info(
+                    f"[PROGRESS] LLM clustering: batch {batch}/{total}, "
+                    f"{processed}/{total_titles} titles classified"
+                )
+
+            clustered = cluster_employees_by_role(
+                employees, progress_callback=log_progress
+            )
+
+            t_post_cluster = time.perf_counter()
+            logger.info(
+                "[TIMING] Post-clustering",
+                elapsed_ms=round((t_post_cluster - t_pre_cluster) * 1000, 2),
+            )
 
             # Filter by B2C/B2B segment if requested
             if request.segment:
@@ -158,26 +183,37 @@ class OutreachService:
                     }
 
             # Store only clustered in session (no duplicate employees list)
+            t_pre_session = time.perf_counter()
             session_id = self._session_store.create(
                 clustered=clustered,
                 trace_id=trace_id,
+            )
+            t_post_session = time.perf_counter()
+            logger.info(
+                "[TIMING] Session created",
+                elapsed_ms=round((t_post_session - t_pre_session) * 1000, 2),
             )
 
             logger.info(
                 "Search and cluster complete",
                 task_id=task_id,
-                trace_id=trace_id,
                 session_id=session_id,
                 total_employees=len(employees),
                 companies=len(companies),
             )
 
+            t_pre_response = time.perf_counter()
             response = OutreachSearchResponse(
                 session_id=session_id,
                 role_groups=clustered,
                 total_employees=len(employees),
                 companies_processed=len(companies),
                 trace_id=trace_id,
+            )
+            t_post_response = time.perf_counter()
+            logger.info(
+                "[TIMING] Response object created",
+                elapsed_ms=round((t_post_response - t_pre_response) * 1000, 2),
             )
 
         except Exception as e:
@@ -189,9 +225,23 @@ class OutreachService:
                 companies_processed=0,
                 trace_id="",
             )
+            t_post_response = time.perf_counter()
 
+        t_pre_publish = time.perf_counter()
         self._producer.publish(TOPIC_OUTREACH_SEARCH_RESULTS, task_id, response)
+        t_post_publish = time.perf_counter()
+        logger.info(
+            "[TIMING] Kafka publish (before flush)",
+            elapsed_ms=round((t_post_publish - t_pre_publish) * 1000, 2),
+        )
+
         self._producer.flush()
+        t_post_flush = time.perf_counter()
+        logger.info(
+            "[TIMING] Kafka flush complete",
+            elapsed_ms=round((t_post_flush - t_post_publish) * 1000, 2),
+            total_elapsed_ms=round((t_post_flush - t_start) * 1000, 2),
+        )
 
     # === Phase 2: Send Messages ===
 
@@ -222,8 +272,11 @@ class OutreachService:
         """Execute the send phase and publish results to Kafka."""
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
+        # Restore trace context from session (propagated from search phase)
+        trace_id = session.get("trace_id") or set_trace_id()
+        set_trace_id(trace_id)
+
         try:
-            trace_id = session.get("trace_id", str(uuid.uuid4()))
             logger.info("Starting send phase", task_id=task_id, trace_id=trace_id)
 
             # Build list of employees with their templates attached

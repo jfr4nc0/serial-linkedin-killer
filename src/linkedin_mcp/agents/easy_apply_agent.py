@@ -1,13 +1,14 @@
-import uuid
 from typing import Any, Dict, List
 
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph
+from loguru import logger
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from src.config.trace_context import get_trace_id
 from src.linkedin_mcp.interfaces.agents import IJobApplicationAgent
 from src.linkedin_mcp.interfaces.services import IBrowserManager
 from src.linkedin_mcp.model.types import ApplicationRequest, CVAnalysis
@@ -16,7 +17,6 @@ from src.linkedin_mcp.observability.langfuse_config import (
     trace_mcp_operation,
 )
 from src.linkedin_mcp.providers.llm_client import get_llm_client
-from src.linkedin_mcp.utils.logging_config import get_mcp_logger
 
 
 class EasyApplyState(Dict):
@@ -691,8 +691,8 @@ class EasyApplyAgent(IJobApplicationAgent):
         Returns:
             Dict with job_id, success status, and optional error message
         """
-        trace_id = str(uuid.uuid4())
-        logger = get_mcp_logger(trace_id)
+        # Use trace_id from context (set by caller)
+        trace_id = get_trace_id()
 
         logger.info(
             "Starting Easy Apply job application",
