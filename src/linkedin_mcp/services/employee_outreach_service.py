@@ -204,6 +204,22 @@ class EmployeeOutreachService(IEmployeeOutreachService):
             if self.browser_manager:
                 self.browser_manager.close_browser()
 
+    # Bounded thread pool for background searches (max 2 concurrent browser sessions)
+    _search_executor = None
+    _search_executor_lock = __import__("threading").Lock()
+
+    @classmethod
+    def _get_search_executor(cls):
+        if cls._search_executor is None:
+            with cls._search_executor_lock:
+                if cls._search_executor is None:
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    cls._search_executor = ThreadPoolExecutor(
+                        max_workers=2, thread_name_prefix="mcp-search"
+                    )
+        return cls._search_executor
+
     def submit_search_batch(
         self,
         companies: List[CompanySearchRequest],
@@ -214,12 +230,10 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         exclude_companies: List[str] = None,
         exclude_profile_urls: List[str] = None,
     ) -> dict:
-        """Return batch_id immediately, run search in background thread.
+        """Return batch_id immediately, run search in bounded thread pool.
 
         When done, publishes MCPSearchComplete to Kafka.
         """
-        import threading
-
         from src.core.queue.config import TOPIC_MCP_SEARCH_COMPLETE
         from src.core.queue.producer import KafkaResultProducer
         from src.core.queue.schemas import MCPSearchComplete
@@ -260,10 +274,8 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                 f"Published MCPSearchComplete for batch {batch_id}: {complete.status}"
             )
 
-        threading.Thread(
-            target=_run, daemon=True, name=f"search-{batch_id[:8]}"
-        ).start()
-        logger.info(f"Submitted batch search {batch_id} to background thread")
+        self._get_search_executor().submit(_run)
+        logger.info(f"Submitted batch search {batch_id} to thread pool")
         return {"batch_id": batch_id}
 
     def send_message(

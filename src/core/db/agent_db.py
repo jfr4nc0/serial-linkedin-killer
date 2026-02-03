@@ -5,7 +5,7 @@ import time
 from datetime import date
 from typing import Any, Dict, Optional, Union
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from src.core.db.engine import create_db_engine, create_session_factory
 from src.core.db.models import (
@@ -164,14 +164,17 @@ class AgentDB:
     def increment_daily_quota(self) -> int:
         today = date.today().isoformat()
         with self._session_factory() as session:
-            row = session.get(DailyQuota, today)
-            if row:
-                row.count += 1
-            else:
-                row = DailyQuota(date=today, count=1)
-                session.add(row)
+            # Atomic upsert to avoid race condition between concurrent threads
+            session.execute(
+                text(
+                    "INSERT INTO daily_quota (date, count) VALUES (:date, 1) "
+                    "ON CONFLICT(date) DO UPDATE SET count = count + 1"
+                ),
+                {"date": today},
+            )
             session.commit()
-            return row.count
+            row = session.get(DailyQuota, today)
+            return row.count if row else 1
 
     # --- Search Results ---
 

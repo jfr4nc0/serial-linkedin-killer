@@ -12,7 +12,7 @@ class LinkedInMCPClientSync:
     """
     Synchronous wrapper for the LinkedInMCPClient.
     Uses a single persistent event loop in a background thread
-    to avoid event loop churn from asyncio.run().
+    and keeps the async client connection open to avoid per-call overhead.
     """
 
     _loop: asyncio.AbstractEventLoop = None
@@ -34,13 +34,45 @@ class LinkedInMCPClientSync:
             return cls._loop
 
     def __init__(self, server_host: str = None, server_port: int = None):
-        self.client = LinkedInMCPClient()
+        self._client = LinkedInMCPClient()
+        self._connected_client = None
+        self._connect_lock = threading.Lock()
+
+    def _get_connected_client(self) -> LinkedInMCPClient:
+        """Get or create a persistent connected client (lazy init)."""
+        if self._connected_client is not None:
+            return self._connected_client
+
+        with self._connect_lock:
+            if self._connected_client is not None:
+                return self._connected_client
+
+            loop = self._get_loop()
+            future = asyncio.run_coroutine_threadsafe(self._client.__aenter__(), loop)
+            self._connected_client = future.result()
+            return self._connected_client
 
     def _run(self, coro):
         """Run a coroutine on the persistent event loop and wait for the result."""
         loop = self._get_loop()
         future = asyncio.run_coroutine_threadsafe(coro, loop)
         return future.result()
+
+    def close(self):
+        """Close the persistent connection."""
+        if self._connected_client is not None:
+            try:
+                loop = self._get_loop()
+                future = asyncio.run_coroutine_threadsafe(
+                    self._client.__aexit__(None, None, None), loop
+                )
+                future.result(timeout=5)
+            except Exception:
+                pass
+            self._connected_client = None
+
+    def __del__(self):
+        self.close()
 
     def search_jobs(
         self,
@@ -53,14 +85,12 @@ class LinkedInMCPClientSync:
         trace_id: str = None,
     ) -> List[JobResult]:
         """Synchronous wrapper for search_jobs."""
-
-        async def _search():
-            async with self.client as client:
-                return await client.search_jobs(
-                    job_title, location, easy_apply, email, password, limit, trace_id
-                )
-
-        return self._run(_search())
+        client = self._get_connected_client()
+        return self._run(
+            client.search_jobs(
+                job_title, location, easy_apply, email, password, limit, trace_id
+            )
+        )
 
     def search_employees(
         self,
@@ -72,14 +102,12 @@ class LinkedInMCPClientSync:
         trace_id: str = None,
     ) -> List[Dict[str, Any]]:
         """Synchronous wrapper for search_employees."""
-
-        async def _search():
-            async with self.client as client:
-                return await client.search_employees(
-                    company_linkedin_url, company_name, email, password, limit, trace_id
-                )
-
-        return self._run(_search())
+        client = self._get_connected_client()
+        return self._run(
+            client.search_employees(
+                company_linkedin_url, company_name, email, password, limit, trace_id
+            )
+        )
 
     def send_message(
         self,
@@ -91,19 +119,17 @@ class LinkedInMCPClientSync:
         trace_id: str = None,
     ) -> Dict[str, Any]:
         """Synchronous wrapper for send_message."""
-
-        async def _send():
-            async with self.client as client:
-                return await client.send_message(
-                    employee_profile_url,
-                    employee_name,
-                    message,
-                    email,
-                    password,
-                    trace_id,
-                )
-
-        return self._run(_send())
+        client = self._get_connected_client()
+        return self._run(
+            client.send_message(
+                employee_profile_url,
+                employee_name,
+                message,
+                email,
+                password,
+                trace_id,
+            )
+        )
 
     def search_employees_batch(
         self,
@@ -120,21 +146,19 @@ class LinkedInMCPClientSync:
 
         Returns summary dict. Actual results are in the shared DB keyed by batch_id.
         """
-
-        async def _search():
-            async with self.client as client:
-                return await client.search_employees_batch(
-                    companies,
-                    email,
-                    password,
-                    total_limit,
-                    trace_id,
-                    exclude_companies=exclude_companies,
-                    exclude_profile_urls=exclude_profile_urls,
-                    batch_id=batch_id,
-                )
-
-        return self._run(_search())
+        client = self._get_connected_client()
+        return self._run(
+            client.search_employees_batch(
+                companies,
+                email,
+                password,
+                total_limit,
+                trace_id,
+                exclude_companies=exclude_companies,
+                exclude_profile_urls=exclude_profile_urls,
+                batch_id=batch_id,
+            )
+        )
 
     def easy_apply_for_jobs(
         self,
@@ -145,11 +169,9 @@ class LinkedInMCPClientSync:
         trace_id: str = None,
     ) -> List[ApplicationResult]:
         """Synchronous wrapper for easy_apply_for_jobs."""
-
-        async def _apply():
-            async with self.client as client:
-                return await client.easy_apply_for_jobs(
-                    applications, cv_analysis, email, password, trace_id
-                )
-
-        return self._run(_apply())
+        client = self._get_connected_client()
+        return self._run(
+            client.easy_apply_for_jobs(
+                applications, cv_analysis, email, password, trace_id
+            )
+        )

@@ -680,7 +680,6 @@ class JobApplicationCLI:
 
             consumer = KafkaResultConsumer(
                 bootstrap_servers=self._get_kafka_servers(),
-                group_id=f"cli-search-{search_task_id[:8]}",
             )
 
             with Live(
@@ -845,7 +844,6 @@ class JobApplicationCLI:
 
             consumer = KafkaResultConsumer(
                 bootstrap_servers=self._get_kafka_servers(),
-                group_id=f"cli-send-{task_id[:8]}",
             )
 
             with Live(

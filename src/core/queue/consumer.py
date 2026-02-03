@@ -1,6 +1,8 @@
 """Kafka consumer for receiving agent workflow results."""
 
 import json
+import time
+import uuid
 from typing import Type, TypeVar
 
 from confluent_kafka import Consumer, KafkaError
@@ -13,15 +15,24 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class KafkaResultConsumer:
-    """Consumes workflow results from Kafka topics, filtering by task_id."""
+    """Consumes workflow results from Kafka topics, filtering by task_id.
 
-    def __init__(self, bootstrap_servers: str | None = None, group_id: str = "cli"):
+    Each instance creates a unique consumer group to avoid offset conflicts
+    and group accumulation on the broker.
+    """
+
+    def __init__(
+        self, bootstrap_servers: str | None = None, group_id: str | None = None
+    ):
         config = load_config()
         servers = bootstrap_servers or config.kafka.bootstrap_servers
+        # Use a unique ephemeral group_id to avoid group accumulation
+        # and offset conflicts between different consume() calls.
+        effective_group_id = group_id or f"ephemeral-{uuid.uuid4().hex[:12]}"
         self._consumer = Consumer(
             {
                 "bootstrap.servers": servers,
-                "group.id": group_id,
+                "group.id": effective_group_id,
                 "auto.offset.reset": "latest",
                 "enable.auto.commit": True,
             }
@@ -48,14 +59,11 @@ class KafkaResultConsumer:
         self._consumer.subscribe([topic])
         logger.info("Waiting for results", topic=topic, task_id=task_id)
 
-        import time
-
         deadline = time.monotonic() + timeout
 
         try:
             while time.monotonic() < deadline:
                 remaining = deadline - time.monotonic()
-                # Use longer poll timeout for efficiency (5 seconds instead of 1)
                 msg = self._consumer.poll(timeout=min(remaining, 5.0))
 
                 if msg is None:

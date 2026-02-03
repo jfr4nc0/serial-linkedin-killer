@@ -142,7 +142,7 @@ class EmployeeOutreachAgent:
             )
 
             # Wait for MCP to publish completion event via Kafka
-            consumer = KafkaResultConsumer(group_id=f"core-agent-{batch_id[:8]}")
+            consumer = KafkaResultConsumer()
             completion = consumer.consume(
                 TOPIC_MCP_SEARCH_COMPLETE, batch_id, MCPSearchComplete, timeout=3600.0
             )
@@ -183,8 +183,6 @@ class EmployeeOutreachAgent:
                 "errors": state.get("errors", []) + [error_msg],
                 "current_status": "Employee search failed",
             }
-        finally:
-            del mcp_client
 
     def send_messages_node(self, state: OutreachAgentState) -> Dict[str, Any]:
         """Send messages to all found employees via MCP (legacy single-template mode)."""

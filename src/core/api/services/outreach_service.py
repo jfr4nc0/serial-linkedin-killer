@@ -1,7 +1,6 @@
 """Service layer for the employee outreach workflow."""
 
 import atexit
-import gc
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -51,6 +50,15 @@ def _shutdown_executor():
 atexit.register(_shutdown_executor)
 
 
+def _log_future_exception(future):
+    """Callback to log uncaught exceptions from thread pool futures."""
+    exc = future.exception()
+    if exc:
+        logger.exception(
+            "Background task failed with uncaught exception", error=str(exc)
+        )
+
+
 class OutreachService:
     """Orchestrates the outreach agent and publishes results to Kafka."""
 
@@ -78,14 +86,14 @@ class OutreachService:
     def submit_search(self, request: OutreachSearchRequest) -> str:
         """Phase 1: Submit search & cluster. Returns task_id, results via Kafka."""
         task_id = str(uuid.uuid4())
-        _get_executor().submit(self._run_search, task_id, request)
+        future = _get_executor().submit(self._run_search, task_id, request)
+        future.add_done_callback(_log_future_exception)
         return task_id
 
     def _run_search(self, task_id: str, request: OutreachSearchRequest) -> None:
         """Execute search & cluster and publish results to Kafka."""
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
-        agent = None
         try:
             trace_id = str(uuid.uuid4())
             logger.info(
@@ -130,19 +138,6 @@ class OutreachService:
                 exclude_profile_urls=request.exclude_profile_urls,
             )
 
-            del agent
-            agent = None
-            gc.collect()
-
-            # Safety net: filter out any already-messaged employees (batch query)
-            db = get_agent_db()
-            messaged_urls = db.get_messaged_profile_urls()
-            employees = [
-                emp
-                for emp in employees
-                if emp.get("profile_url", "") not in messaged_urls
-            ]
-
             # Cluster employees by role using LLM
             clustered = cluster_employees_by_role(employees)
 
@@ -162,11 +157,9 @@ class OutreachService:
                         for k, v in clustered.items()
                     }
 
-            # Store in session for Phase 2
+            # Store only clustered in session (no duplicate employees list)
             session_id = self._session_store.create(
-                employees=employees,
                 clustered=clustered,
-                companies=companies,
                 trace_id=trace_id,
             )
 
@@ -196,10 +189,6 @@ class OutreachService:
                 companies_processed=0,
                 trace_id="",
             )
-        finally:
-            if agent is not None:
-                del agent
-                gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_SEARCH_RESULTS, task_id, response)
         self._producer.flush()
@@ -216,7 +205,8 @@ class OutreachService:
         task_id = str(uuid.uuid4())
 
         # Submit to thread pool instead of creating unbounded daemon threads
-        _get_executor().submit(self._run_send, task_id, request, session)
+        future = _get_executor().submit(self._run_send, task_id, request, session)
+        future.add_done_callback(_log_future_exception)
 
         # Delete session after use (data is passed to thread)
         self._session_store.delete(request.session_id)
@@ -232,7 +222,6 @@ class OutreachService:
         """Execute the send phase and publish results to Kafka."""
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
-        agent = None
         try:
             trace_id = session.get("trace_id", str(uuid.uuid4()))
             logger.info("Starting send phase", task_id=task_id, trace_id=trace_id)
@@ -316,9 +305,6 @@ class OutreachService:
                 errors=[str(e)],
                 trace_id="",
             )
-        finally:
-            del agent
-            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)
 
@@ -328,8 +314,8 @@ class OutreachService:
         """Legacy: Submit a single-phase outreach workflow. Returns task_id immediately."""
         task_id = str(uuid.uuid4())
 
-        # Submit to thread pool instead of creating unbounded daemon threads
-        _get_executor().submit(self._run, task_id, request)
+        future = _get_executor().submit(self._run, task_id, request)
+        future.add_done_callback(_log_future_exception)
 
         return task_id
 
@@ -337,7 +323,6 @@ class OutreachService:
         """Execute the legacy single-phase outreach agent and publish results."""
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
-        agent = None
         try:
             logger.info("Starting outreach workflow", task_id=task_id)
 
@@ -393,8 +378,5 @@ class OutreachService:
                 errors=[str(e)],
                 trace_id="",
             )
-        finally:
-            del agent
-            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)

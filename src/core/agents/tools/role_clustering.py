@@ -123,8 +123,14 @@ def cluster_employees_by_role(
     return result
 
 
+# Module-level cache: {title -> category} persists across searches within the same process
+_title_cache: Dict[str, str] = {}
+
+
 def _classify_titles_with_llm(titles: List[str]) -> Dict[str, str]:
     """Call LLM to classify job titles into categories.
+
+    Uses an in-memory cache to avoid re-classifying titles seen in previous searches.
 
     Args:
         titles: List of unique job titles.
@@ -135,9 +141,22 @@ def _classify_titles_with_llm(titles: List[str]) -> Dict[str, str]:
     if not titles:
         return {}
 
-    # Build prompt
+    # Check cache for already-classified titles
+    cached = {t: _title_cache[t] for t in titles if t in _title_cache}
+    uncached = [t for t in titles if t not in _title_cache]
+
+    if not uncached:
+        logger.debug(f"All {len(cached)} titles resolved from cache")
+        return cached
+
+    if cached:
+        logger.debug(
+            f"{len(cached)} titles from cache, {len(uncached)} need LLM classification"
+        )
+
+    # Build prompt only for uncached titles
     categories_str = ", ".join(ROLE_CATEGORIES)
-    titles_str = "\n".join(f"- {t}" for t in titles)
+    titles_str = "\n".join(f"- {t}" for t in uncached)
     prompt = _CLASSIFICATION_PROMPT.format(categories=categories_str, titles=titles_str)
 
     try:
@@ -168,19 +187,28 @@ def _classify_titles_with_llm(titles: List[str]) -> Dict[str, str]:
                 )
                 validated[title] = "Other"
 
-        # Add any missing titles as Other
-        for title in titles:
+        # Add any missing uncached titles as Other
+        for title in uncached:
             if title not in validated:
                 validated[title] = "Other"
 
+        # Update cache with new classifications
+        _title_cache.update(validated)
+
+        # Merge cached + newly classified
+        validated.update(cached)
         return validated
 
     except json.JSONDecodeError as e:
         logger.warning("Failed to parse LLM response as JSON", error=str(e))
-        return {t: "Other" for t in titles}
+        result = {t: "Other" for t in uncached}
+        result.update(cached)
+        return result
     except Exception as e:
         logger.exception("LLM classification failed", error=str(e))
-        return {t: "Other" for t in titles}
+        result = {t: "Other" for t in uncached}
+        result.update(cached)
+        return result
 
 
 def filter_by_segment(
