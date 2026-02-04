@@ -54,49 +54,46 @@ def register_employee_tools(mcp, employee_outreach_service):
         return result
 
     @mcp.tool
-    def send_message(
-        employee_profile_url: str,
-        employee_name: str,
-        message: str,
+    def send_messages_batch(
+        messages: str,
         email: str,
         password: str,
         trace_id: str = None,
-    ) -> MessageResult:
+    ) -> list[dict]:
         """
-        Send a message or connection request to a LinkedIn user.
-        Automatically detects whether to send a direct message or connection request with note.
+        Send multiple messages using a single browser session.
+        Much more efficient than calling send_message per employee.
 
         Args:
-            employee_profile_url: LinkedIn profile URL of the employee
-            employee_name: Name of the employee
-            message: Message text to send (truncated to 300 chars for connection requests)
+            messages: JSON string of list of dicts with keys: profile_url, name, message, subject
             email: LinkedIn email for authentication
             password: LinkedIn password for authentication
             trace_id: Optional trace ID for correlation
 
         Returns:
-            MessageResult with sent status, method used, and optional error
+            List of MessageResult dicts with sent status per message
         """
-        # Set trace context (auto-propagates to all logs)
+        import json as _json
+
         if trace_id:
             set_trace_id(trace_id)
 
+        parsed_messages = _json.loads(messages)
         logger.info(
-            f"Sending message to {employee_name}",
-            employee=employee_name,
+            f"Starting batch message send: {len(parsed_messages)} messages",
         )
 
         user_credentials = {"email": email, "password": password}
-        result = employee_outreach_service.send_message(
-            employee_profile_url, employee_name, message, user_credentials
+        results = employee_outreach_service.send_messages_batch(
+            parsed_messages, user_credentials, trace_id=trace_id
         )
 
+        successful = sum(1 for r in results if r.get("sent"))
         logger.info(
-            f"Message send result: sent={result['sent']}, method={result.get('method', '')}",
-            sent=result["sent"],
+            f"Batch send complete: {successful}/{len(results)} sent",
         )
 
-        return result
+        return results
 
     @mcp.tool
     def search_employees_batch(

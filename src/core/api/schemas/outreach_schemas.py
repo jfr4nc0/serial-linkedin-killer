@@ -72,6 +72,13 @@ class OutreachSendRequest(BaseModel):
     selected_groups: Dict[str, RoleGroupConfig]
     credentials: CredentialsModel
     warm_up: bool = False
+    max_per_company: Optional[int] = None  # Max messages per company (anti-spam)
+    selected_employees: Optional[List[str]] = (
+        None  # Specific employee profile URLs to message
+    )
+    reassignments: Optional[Dict[str, str]] = (
+        None  # {profile_url: new_role} to fix LLM misclassifications
+    )
 
 
 class OutreachSendResponse(BaseModel):

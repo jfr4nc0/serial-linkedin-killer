@@ -33,6 +33,7 @@ class MessageSendState(TypedDict):
     employee_profile_url: str
     employee_name: str
     message_text: str
+    subject: str  # Subject line for direct messages (optional)
     browser_manager: IBrowserManager
     sent: bool
     method: str

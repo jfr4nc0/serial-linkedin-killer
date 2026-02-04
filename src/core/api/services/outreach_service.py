@@ -283,6 +283,28 @@ class OutreachService:
             employees_with_templates = []
             clustered = session["clustered"]
 
+            # Apply role reassignments from client (fixes LLM misclassifications)
+            if request.reassignments:
+                for profile_url, new_role in request.reassignments.items():
+                    # Find and move the employee
+                    for old_role, emps in list(clustered.items()):
+                        for emp in emps:
+                            if emp.get("profile_url") == profile_url:
+                                emps.remove(emp)
+                                if new_role not in clustered:
+                                    clustered[new_role] = []
+                                clustered[new_role].append(emp)
+                                logger.info(
+                                    "Reassigned employee",
+                                    name=emp.get("name"),
+                                    old_role=old_role,
+                                    new_role=new_role,
+                                )
+                                break
+                        else:
+                            continue
+                        break
+
             for role, config in request.selected_groups.items():
                 if not config.enabled:
                     continue
@@ -297,6 +319,20 @@ class OutreachService:
                             "_role": role,
                         }
                     )
+
+            # Filter to selected employees if specified
+            if request.selected_employees:
+                selected_set = set(request.selected_employees)
+                before_count = len(employees_with_templates)
+                employees_with_templates = [
+                    emp
+                    for emp in employees_with_templates
+                    if emp.get("profile_url") in selected_set
+                ]
+                logger.info(
+                    f"Filtered to {len(employees_with_templates)} selected employees "
+                    f"(from {before_count})"
+                )
 
             if not employees_with_templates:
                 response = OutreachSendResponse(
@@ -323,6 +359,7 @@ class OutreachService:
                 employees_with_templates=employees_with_templates,
                 user_credentials=request.credentials.model_dump(),
                 daily_limit=daily_limit,
+                max_per_company=request.max_per_company,
                 trace_id=trace_id,
             )
 

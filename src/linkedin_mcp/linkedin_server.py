@@ -67,8 +67,8 @@ log_mcp_tool_registration(
             "description": "Search for employees at a LinkedIn company",
         },
         {
-            "name": "send_message",
-            "description": "Send message or connection request to a LinkedIn user",
+            "name": "send_messages_batch",
+            "description": "Send messages to multiple LinkedIn users in a single browser session",
         },
         {
             "name": "search_employees_batch",

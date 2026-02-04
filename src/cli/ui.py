@@ -619,43 +619,114 @@ class TerminalUI:
         )
         self.console.print(panel)
 
-    def prompt_message_template(self) -> str:
-        """Prompt user for message template (inline or file path)."""
-        self.console.print(
-            "\nEnter message template. Use {employee_name}, {company_name}, "
-            "{employee_title}, {my_name}, {my_role} as placeholders.",
-            style="bold blue",
-        )
-        self.console.print(
-            "Enter a file path starting with '/' or './' to load from file.",
-        )
-        self.console.print(
-            "Or type your message (end with an empty line):\n",
+    def edit_in_editor(self, content: str = "", header_comment: str = "") -> str:
+        """Open $EDITOR to edit text content. Returns edited text.
+
+        Args:
+            content: Initial content to edit.
+            header_comment: Comment block placed at top of file (stripped on return).
+        """
+        import os
+        import subprocess
+        import tempfile
+
+        editor = os.environ.get("EDITOR", "vim")
+
+        file_content = ""
+        if header_comment:
+            # Prefix each line with #
+            for line in header_comment.strip().splitlines():
+                file_content += f"# {line}\n"
+            file_content += "#\n# Lines starting with # are ignored.\n"
+            file_content += "# Save and close the editor when done.\n\n"
+
+        file_content += content
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", prefix="outreach_template_", delete=False
+        ) as f:
+            f.write(file_content)
+            tmp_path = f.name
+
+        try:
+            subprocess.run([editor, tmp_path], check=True)
+
+            with open(tmp_path, "r", encoding="utf-8") as f:
+                edited = f.read()
+
+            # Strip comment lines
+            lines = [line for line in edited.splitlines() if not line.startswith("#")]
+
+            # Strip leading/trailing blank lines
+            result = "\n".join(lines).strip()
+            return result
+
+        except subprocess.CalledProcessError:
+            self.console.print(
+                "Editor exited with error, keeping original", style="yellow"
+            )
+            return content
+        finally:
+            os.unlink(tmp_path)
+
+    def prompt_message_template(self, initial_content: str = "") -> str:
+        """Prompt user for message template (editor, inline, or file path)."""
+        import os
+
+        placeholders = (
+            "Available placeholders:\n"
+            "  {employee_name}  - Full name of the employee\n"
+            "  {first_name}     - First name only\n"
+            "  {company_name}   - Company name\n"
+            "  {employee_title} - Job title\n"
+            "  {my_name}        - Your name\n"
+            "  {my_role}        - Your role/title\n"
+            "  {topic}          - Topic/reason for outreach\n"
+            "  {custom_closing} - Custom closing"
         )
 
-        lines = []
-        while True:
-            line = self.console.input("")
-            if line == "":
-                if lines:
-                    break
-                continue
-            lines.append(line)
+        editor = os.environ.get("EDITOR", "vim")
+        self.console.print(
+            f"\n[bold blue]Enter message template:[/bold blue]",
+        )
+        self.console.print(f"  e - Open in editor ({editor})")
+        self.console.print("  f - Load from file path")
+        self.console.print("  i - Type inline (end with empty line)")
 
-        text = "\n".join(lines)
+        choice = self.console.input("\nChoice [e]: ").strip().lower() or "e"
 
-        # Check if it's a file path
-        if text.startswith("/") or text.startswith("./"):
+        if choice == "e":
+            return self.edit_in_editor(initial_content, placeholders)
+
+        elif choice == "f":
             from pathlib import Path
 
-            path = Path(text.strip())
+            file_path = self.console.input("File path: ").strip()
+            path = Path(file_path)
             if path.exists():
                 return path.read_text(encoding="utf-8")
             else:
-                self.console.print(f"File not found: {text}", style="red")
-                return self.prompt_message_template()
+                self.console.print(f"File not found: {file_path}", style="red")
+                return self.prompt_message_template(initial_content)
 
-        return text
+        else:
+            # Inline input
+            self.console.print(
+                f"\n{placeholders}\n",
+                style="dim",
+            )
+            self.console.print("Type your message (end with an empty line):\n")
+
+            lines = []
+            while True:
+                line = self.console.input("")
+                if line == "":
+                    if lines:
+                        break
+                    continue
+                lines.append(line)
+
+            return "\n".join(lines)
 
     def prompt_template_variables(self) -> Dict[str, str]:
         """Prompt user for static template variables."""
@@ -730,6 +801,134 @@ class TerminalUI:
 
         self.console.print(f"[bold]Total employees: {total}[/bold]\n")
 
+    def prompt_role_reassignment(
+        self, role_groups: Dict[str, List[Dict[str, Any]]]
+    ) -> tuple:
+        """Let the user reassign employees between roles to fix LLM mistakes.
+
+        Shows all employees with a global index, lets the user pick one and
+        choose a new role.  Loops until the user presses Enter to finish.
+
+        Returns (role_groups, reassignments_map) where reassignments_map is
+        {profile_url: new_role} for the server to apply.
+        """
+        reassign = (
+            self.console.input("Reassign employees between roles? [y/N]: ")
+            .strip()
+            .lower()
+        )
+        if reassign != "y":
+            return role_groups, {}
+
+        reassignments: Dict[str, str] = {}
+
+        # Build a flat indexed list: (global_idx, role, employee_dict)
+        while True:
+            flat: list[tuple[str, dict]] = []
+            roles = [r for r in role_groups if role_groups[r]]
+            for role in roles:
+                for emp in role_groups[role]:
+                    flat.append((role, emp))
+
+            if not flat:
+                self.console.print("No employees to reassign", style="yellow")
+                break
+
+            # Display all employees with a global number
+            table = Table(
+                title="All Employees by Role",
+                show_header=True,
+                header_style="bold magenta",
+            )
+            table.add_column("#", style="cyan", width=5)
+            table.add_column("Name", style="green")
+            table.add_column("Title", style="yellow")
+            table.add_column("Company", style="blue")
+            table.add_column("Current Role", style="magenta")
+
+            for i, (role, emp) in enumerate(flat, 1):
+                table.add_row(
+                    str(i),
+                    emp.get("name", ""),
+                    emp.get("title", ""),
+                    emp.get("company_name", ""),
+                    role,
+                )
+
+            self.console.print(table)
+            self.console.print()
+
+            pick = self.console.input(
+                "Employee # to reassign (Enter to finish): "
+            ).strip()
+
+            if not pick:
+                break
+
+            if not pick.isdigit():
+                self.console.print("Enter a number", style="red")
+                continue
+
+            idx = int(pick) - 1
+            if idx < 0 or idx >= len(flat):
+                self.console.print("Invalid number", style="red")
+                continue
+
+            current_role, emp = flat[idx]
+            emp_name = emp.get("name", "Unknown")
+            self.console.print(
+                f"\n[bold]{emp_name}[/bold] is currently in "
+                f"[cyan]{current_role}[/cyan]"
+            )
+
+            # Show target role options
+            self.console.print("\nMove to:")
+            for i, role in enumerate(roles, 1):
+                marker = " (current)" if role == current_role else ""
+                self.console.print(f"  {i}. {role}{marker}")
+
+            target = self.console.input("Target role #: ").strip()
+            if not target.isdigit():
+                self.console.print("Cancelled", style="yellow")
+                continue
+
+            target_idx = int(target) - 1
+            if target_idx < 0 or target_idx >= len(roles):
+                self.console.print("Invalid number", style="red")
+                continue
+
+            new_role = roles[target_idx]
+            if new_role == current_role:
+                self.console.print("Same role, no change", style="dim")
+                continue
+
+            # Move the employee
+            role_groups[current_role].remove(emp)
+            role_groups[new_role].append(emp)
+
+            # Track reassignment for the server
+            profile_url = emp.get("profile_url", "")
+            if profile_url:
+                reassignments[profile_url] = new_role
+
+            # Clean up empty groups
+            if not role_groups[current_role]:
+                del role_groups[current_role]
+
+            self.console.print(
+                f"Moved [bold]{emp_name}[/bold] -> [cyan]{new_role}[/cyan]",
+                style="green",
+            )
+
+        # Show updated summary
+        self.console.print("\n[bold]Updated role groups:[/bold]")
+        for role, emps in role_groups.items():
+            if emps:
+                self.console.print(f"  {role}: {len(emps)} employees")
+        self.console.print()
+
+        return role_groups, reassignments
+
     def prompt_group_selection(
         self, role_groups: Dict[str, List[Dict[str, Any]]]
     ) -> List[str]:
@@ -758,9 +957,11 @@ class TerminalUI:
         self.console.print(table)
         self.console.print()
 
-        selection = self.console.input(
-            "Select groups (comma-separated numbers, or 'all'): "
-        ).strip()
+        selection = (
+            self.console.input("Select groups (comma-separated numbers, or 'all'): ")
+            .strip()
+            .strip("'\"")
+        )
 
         if not selection or selection.lower() == "all":
             return [role for role, _ in non_empty]
@@ -806,10 +1007,13 @@ class TerminalUI:
         template: str,
         variables: Dict[str, str],
         sample_employee: Optional[Dict[str, Any]] = None,
-    ) -> bool:
+    ) -> str:
         """Preview a rendered message and ask for confirmation.
 
-        Returns True if user confirms, False to re-enter template.
+        Returns:
+            "confirm" - user approved the template
+            "edit"    - user wants to edit the template in $EDITOR
+            "reject"  - user wants to start over with a new template
         """
         # Render with sample data
         preview_vars = {**variables}
@@ -842,8 +1046,104 @@ class TerminalUI:
         )
         self.console.print(panel)
 
-        confirm = self.console.input("Send this template? [Y/n]: ").strip().lower()
-        return confirm != "n"
+        choice = (
+            self.console.input("Send this template? [Y/n/e(dit)]: ").strip().lower()
+        )
+        if choice in ("e", "edit"):
+            return "edit"
+        elif choice == "n":
+            return "reject"
+        return "confirm"
+
+    def review_all_templates(
+        self,
+        selected_groups_config: Dict[str, Dict[str, Any]],
+        role_groups: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Show a summary of all configured templates and let the user edit any.
+
+        Returns the (possibly modified) selected_groups_config.
+        """
+        from src.core.agents.tools.message_template import render_template
+
+        while True:
+            self.console.print("\n[bold blue]Template Summary[/bold blue]\n")
+
+            roles = list(selected_groups_config.keys())
+            for i, role in enumerate(roles, 1):
+                cfg = selected_groups_config[role]
+                template = cfg["message_template"]
+                count = len(role_groups.get(role, []))
+                # Show truncated template
+                preview_line = template.replace("\n", " ")
+                if len(preview_line) > 80:
+                    preview_line = preview_line[:77] + "..."
+                self.console.print(
+                    f"  {i}. [cyan]{role}[/cyan] ({count} employees): {preview_line}"
+                )
+
+            self.console.print()
+            choice = self.console.input(
+                "Edit a template? (number to edit, Enter to continue): "
+            ).strip()
+
+            if not choice:
+                break
+
+            if not choice.isdigit():
+                continue
+
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(roles):
+                self.console.print("Invalid number", style="red")
+                continue
+
+            role = roles[idx]
+            cfg = selected_groups_config[role]
+            template = cfg["message_template"]
+            variables = cfg["template_variables"]
+            employees_in_role = role_groups.get(role, [])
+            sample_employee = employees_in_role[0] if employees_in_role else None
+
+            # Edit-preview loop for the selected role
+            template = self.edit_in_editor(
+                template,
+                header_comment=(
+                    f"Editing template for: {role}\n\n"
+                    "Available placeholders:\n"
+                    "  {employee_name}  - Full name\n"
+                    "  {first_name}     - First name only\n"
+                    "  {company_name}   - Company name\n"
+                    "  {employee_title} - Job title\n"
+                    "  {my_name}        - Your name\n"
+                    "  {my_role}        - Your role/title\n"
+                    "  {topic}          - Topic/reason for outreach\n"
+                    "  {custom_closing} - Custom closing"
+                ),
+            )
+
+            # Preview updated template
+            while True:
+                result = self.print_message_preview(
+                    role, template, variables, sample_employee
+                )
+                if result == "confirm":
+                    break
+                elif result == "edit":
+                    template = self.edit_in_editor(
+                        template,
+                        header_comment=f"Editing template for: {role}",
+                    )
+                else:
+                    # reject: re-open editor with current content
+                    template = self.edit_in_editor(
+                        template,
+                        header_comment=f"Editing template for: {role}",
+                    )
+
+            selected_groups_config[role]["message_template"] = template
+
+        return selected_groups_config
 
     def print_outreach_results_by_role(
         self,

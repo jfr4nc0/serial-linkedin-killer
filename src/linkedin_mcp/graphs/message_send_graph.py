@@ -142,6 +142,21 @@ class MessageSendGraph:
                 )
             )
 
+            # Fill in subject field if provided
+            subject = state.get("subject", "")
+            if subject:
+                try:
+                    subject_input = driver.find_element(
+                        By.CSS_SELECTOR,
+                        "input[name='subject'], input[placeholder*='Subject']",
+                    )
+                    subject_input.clear()
+                    subject_input.send_keys(subject)
+                    state["browser_manager"].random_delay(0.3, 0.5)
+                except NoSuchElementException:
+                    # Subject field not present (some LinkedIn message dialogs don't have it)
+                    pass
+
             # Type message
             text_box = driver.find_element(
                 By.CSS_SELECTOR, ".msg-form__contenteditable, div[role='textbox']"
@@ -239,12 +254,14 @@ class MessageSendGraph:
         employee_name: str,
         message_text: str,
         authenticated_browser_manager: IBrowserManager,
+        subject: str = "",
     ) -> MessageResult:
         """Execute the message send workflow."""
         initial_state = MessageSendState(
             employee_profile_url=employee_profile_url,
             employee_name=employee_name,
             message_text=message_text,
+            subject=subject,
             browser_manager=authenticated_browser_manager,
             sent=False,
             method="",

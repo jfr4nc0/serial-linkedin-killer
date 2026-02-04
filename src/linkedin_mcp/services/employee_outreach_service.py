@@ -292,41 +292,77 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         logger.info(f"Submitted batch search {batch_id} to thread pool")
         return {"batch_id": batch_id}
 
-    def send_message(
+    def send_messages_batch(
         self,
-        employee_profile_url: str,
-        employee_name: str,
-        message: str,
+        messages: List[Dict[str, str]],
         user_credentials: Dict[str, str],
-    ) -> MessageResult:
-        """Send a message or connection request to an employee."""
+        trace_id: str = None,
+    ) -> List[MessageResult]:
+        """Send multiple messages using a SINGLE browser session.
+
+        Args:
+            messages: List of dicts with keys: profile_url, name, message, subject
+            user_credentials: LinkedIn credentials
+            trace_id: Trace ID for distributed tracing
+        """
+        if trace_id:
+            set_trace_id(trace_id)
+
+        results: List[MessageResult] = []
         try:
             self._ensure_authenticated(user_credentials)
 
-            result = self.message_send_graph.execute(
-                employee_profile_url,
-                employee_name,
-                message,
-                self.browser_manager,
-            )
+            for i, msg in enumerate(messages):
+                try:
+                    logger.info(
+                        f"Sending message {i + 1}/{len(messages)} to {msg.get('name', '')}",
+                    )
+                    result = self.message_send_graph.execute(
+                        msg["profile_url"],
+                        msg["name"],
+                        msg["message"],
+                        self.browser_manager,
+                        subject=msg.get("subject", ""),
+                    )
+                    results.append(result)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to send message to {msg.get('name', '')}: {e}"
+                    )
+                    results.append(
+                        MessageResult(
+                            employee_profile_url=msg.get("profile_url", ""),
+                            employee_name=msg.get("name", ""),
+                            sent=False,
+                            method="",
+                            error=str(e),
+                        )
+                    )
 
-            # Random delay between messages for anti-detection
-            delay = random.uniform(
-                self.config.outreach.delay_between_messages_min,
-                self.config.outreach.delay_between_messages_max,
-            )
-            time.sleep(delay)
+                # Anti-detection delay between messages
+                if i < len(messages) - 1:
+                    delay = random.uniform(
+                        self.config.outreach.delay_between_messages_min,
+                        self.config.outreach.delay_between_messages_max,
+                    )
+                    time.sleep(delay)
 
-            return result
+            return results
 
         except Exception as e:
-            return MessageResult(
-                employee_profile_url=employee_profile_url,
-                employee_name=employee_name,
-                sent=False,
-                method="",
-                error=str(e),
-            )
+            logger.error(f"Batch message sending failed: {e}")
+            while len(results) < len(messages):
+                msg = messages[len(results)]
+                results.append(
+                    MessageResult(
+                        employee_profile_url=msg.get("profile_url", ""),
+                        employee_name=msg.get("name", ""),
+                        sent=False,
+                        method="",
+                        error=str(e),
+                    )
+                )
+            return results
 
         finally:
             if self.browser_manager:

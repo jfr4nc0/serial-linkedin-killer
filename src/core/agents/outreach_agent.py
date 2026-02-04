@@ -185,225 +185,261 @@ class EmployeeOutreachAgent:
             }
 
     def send_messages_node(self, state: OutreachAgentState) -> Dict[str, Any]:
-        """Send messages to all found employees via MCP (legacy single-template mode)."""
+        """Send messages to all found employees via MCP (legacy single-template mode).
+
+        Pre-filters employees (quota, already-messaged), renders templates,
+        then sends the entire batch via a single MCP call (one browser session).
+        """
         trace_id = get_trace_id()
 
-        message_results = []
         messages_sent = self._db.get_daily_quota()
         daily_limit = state.get(
             "daily_message_limit", self.config.outreach.daily_message_limit
         )
 
-        try:
-            mcp_client = LinkedInMCPClientSync()
-            template = state["message_template"]
-            static_vars = state.get("template_variables", {})
+        template = state["message_template"]
+        static_vars = state.get("template_variables", {})
 
-            # Batch load all messaged URLs once (fixes N+1 query)
-            messaged_urls = self._db.get_messaged_profile_urls()
+        # Batch load all messaged URLs once (fixes N+1 query)
+        messaged_urls = self._db.get_messaged_profile_urls()
 
-            for employee in state["employees_found"]:
-                if messages_sent >= daily_limit:
-                    logger.info(f"Daily message limit reached ({daily_limit})")
-                    break
+        # === Phase A: Pre-filter and render messages ===
+        messages_to_send = []
+        message_metadata = []
 
-                profile_url = employee.get("profile_url", "")
-                if profile_url in messaged_urls:
-                    logger.info(
-                        f"Skipping {employee.get('name', '')}: already messaged"
-                    )
-                    continue
+        for employee in state["employees_found"]:
+            if messages_sent + len(messages_to_send) >= daily_limit:
+                logger.info(f"Daily message limit reached ({daily_limit})")
+                break
 
-                # Render template with employee-specific variables
-                variables = {
-                    **static_vars,
-                    "employee_name": employee.get("name", ""),
-                    "company_name": employee.get("company_name", ""),
-                    "employee_title": employee.get("title", ""),
+            profile_url = employee.get("profile_url", "")
+            if profile_url in messaged_urls:
+                logger.info(f"Skipping {employee.get('name', '')}: already messaged")
+                continue
+
+            # Render template with employee-specific variables
+            variables = {
+                **static_vars,
+                "employee_name": employee.get("name", ""),
+                "company_name": employee.get("company_name", ""),
+                "employee_title": employee.get("title", ""),
+            }
+            message_text = render_template(template, variables)
+            subject = static_vars.get("topic", "")
+
+            messages_to_send.append(
+                {
+                    "profile_url": profile_url,
+                    "name": employee.get("name", ""),
+                    "message": message_text,
+                    "subject": subject,
                 }
-                message_text = render_template(template, variables)
+            )
+            message_metadata.append(
+                {
+                    "profile_url": profile_url,
+                    "name": employee.get("name", ""),
+                }
+            )
 
-                try:
-                    logger.info(
-                        f"Sending message to {employee.get('name', '')} at {employee.get('company_name', '')}",
-                    )
-
-                    result = mcp_client.send_message(
-                        employee_profile_url=profile_url,
-                        employee_name=employee.get("name", ""),
-                        message=message_text,
-                        email=state["user_credentials"]["email"],
-                        password=state["user_credentials"]["password"],
-                        trace_id=trace_id,
-                    )
-
-                    message_results.append(result)
-                    sent = result.get("sent", False)
-                    self._db.record_message(
-                        profile_url,
-                        employee.get("name", ""),
-                        sent,
-                        result.get("method", ""),
-                        result.get("error"),
-                    )
-                    if sent:
-                        messages_sent = self._db.increment_daily_quota()
-
-                except Exception as e:
-                    error_msg = f"Failed to send message to {employee.get('name', '')}: {str(e)}"
-                    logger.error(error_msg)
-                    self._db.record_message(
-                        profile_url,
-                        employee.get("name", ""),
-                        False,
-                        "",
-                        str(e),
-                    )
-                    message_results.append(
-                        {
-                            "employee_profile_url": profile_url,
-                            "employee_name": employee.get("name", ""),
-                            "sent": False,
-                            "method": "",
-                            "error": str(e),
-                        }
-                    )
-
-            successful = sum(1 for r in message_results if r.get("sent"))
-
+        if not messages_to_send:
+            logger.info("No messages to send after filtering")
             return {
-                "message_results": message_results,
+                "message_results": [],
                 "messages_sent_today": messages_sent,
-                "current_status": f"Sent {successful}/{len(message_results)} messages",
+                "current_status": "No messages to send",
             }
 
+        logger.info(f"Sending batch of {len(messages_to_send)} messages")
+
+        # === Phase B: Batch send via single MCP call (one browser) ===
+        try:
+            mcp_client = LinkedInMCPClientSync()
+            batch_results = mcp_client.send_messages_batch(
+                messages=messages_to_send,
+                email=state["user_credentials"]["email"],
+                password=state["user_credentials"]["password"],
+                trace_id=trace_id,
+            )
         except Exception as e:
-            error_msg = f"Message sending failed: {str(e)}"
+            error_msg = f"Batch message sending failed: {str(e)}"
+            logger.error(error_msg)
             return {
                 "errors": state.get("errors", []) + [error_msg],
                 "current_status": "Message sending failed",
             }
+
+        # === Phase C: Process results ===
+        message_results = []
+        for i, result in enumerate(batch_results):
+            meta = message_metadata[i] if i < len(message_metadata) else {}
+
+            if not isinstance(result, dict):
+                result = dict(result)
+
+            message_results.append(result)
+
+            sent = result.get("sent", False)
+            self._db.record_message(
+                meta.get("profile_url", ""),
+                meta.get("name", ""),
+                sent,
+                result.get("method", ""),
+                result.get("error"),
+            )
+            if sent:
+                messages_sent = self._db.increment_daily_quota()
+
+        successful = sum(1 for r in message_results if r.get("sent"))
+
+        return {
+            "message_results": message_results,
+            "messages_sent_today": messages_sent,
+            "current_status": f"Sent {successful}/{len(message_results)} messages",
+        }
 
     def send_messages_with_templates_node(
         self, state: OutreachAgentState
     ) -> Dict[str, Any]:
         """Send messages using per-employee templates (Phase 2 mode).
 
-        Each employee in employees_found has:
-        - _template: message template for this employee's role group
-        - _template_vars: static variables for this template
-        - _role: role category for result grouping
+        Pre-filters employees (quota, per-company limits, already-messaged),
+        then sends the entire batch via a single MCP call (one browser session).
         """
         trace_id = get_trace_id()
 
-        message_results = []
         messages_sent = self._db.get_daily_quota()
         daily_limit = state.get(
             "daily_message_limit", self.config.outreach.daily_message_limit
         )
+        max_per_company = state.get("max_per_company")
+        company_message_count: Dict[str, int] = {}
 
-        try:
-            mcp_client = LinkedInMCPClientSync()
+        # Batch load all messaged URLs once (fixes N+1 query)
+        messaged_urls = self._db.get_messaged_profile_urls()
 
-            # Batch load all messaged URLs once (fixes N+1 query)
-            messaged_urls = self._db.get_messaged_profile_urls()
+        # === Phase A: Pre-filter and render messages ===
+        messages_to_send = []
+        # Track metadata per message for post-processing
+        message_metadata = []
 
-            for employee in state["employees_found"]:
-                if messages_sent >= daily_limit:
-                    logger.info(f"Daily message limit reached ({daily_limit})")
-                    break
+        for employee in state["employees_found"]:
+            if messages_sent + len(messages_to_send) >= daily_limit:
+                logger.info(f"Daily message limit reached ({daily_limit})")
+                break
 
-                profile_url = employee.get("profile_url", "")
-                if profile_url in messaged_urls:
+            profile_url = employee.get("profile_url", "")
+            if profile_url in messaged_urls:
+                logger.info(f"Skipping {employee.get('name', '')}: already messaged")
+                continue
+
+            company_name = employee.get("company_name", "Unknown")
+            if max_per_company:
+                current_count = company_message_count.get(company_name, 0)
+                if current_count >= max_per_company:
                     logger.info(
-                        f"Skipping {employee.get('name', '')}: already messaged"
+                        f"Skipping {employee.get('name', '')}: company limit reached "
+                        f"({current_count}/{max_per_company} for {company_name})"
                     )
                     continue
 
-                # Get per-employee template
-                template = employee.get("_template", "")
-                static_vars = employee.get("_template_vars", {})
-                role = employee.get("_role", "Other")
+            template = employee.get("_template", "")
+            static_vars = employee.get("_template_vars", {})
+            role = employee.get("_role", "Other")
 
-                if not template:
-                    logger.warning(
-                        f"No template for employee {employee.get('name', '')}"
-                    )
-                    continue
+            if not template:
+                logger.warning(f"No template for employee {employee.get('name', '')}")
+                continue
 
-                # Render template with employee-specific variables
-                variables = {
-                    **static_vars,
-                    "employee_name": employee.get("name", ""),
-                    "company_name": employee.get("company_name", ""),
-                    "employee_title": employee.get("title", ""),
+            variables = {
+                **static_vars,
+                "employee_name": employee.get("name", ""),
+                "company_name": employee.get("company_name", ""),
+                "employee_title": employee.get("title", ""),
+            }
+            message_text = render_template(template, variables)
+            subject = static_vars.get("topic", "")
+
+            messages_to_send.append(
+                {
+                    "profile_url": profile_url,
+                    "name": employee.get("name", ""),
+                    "message": message_text,
+                    "subject": subject,
                 }
-                message_text = render_template(template, variables)
+            )
+            message_metadata.append(
+                {
+                    "profile_url": profile_url,
+                    "name": employee.get("name", ""),
+                    "company_name": company_name,
+                    "role": role,
+                }
+            )
 
-                try:
-                    logger.info(
-                        f"Sending message to {employee.get('name', '')} ({role}) at {employee.get('company_name', '')}",
-                    )
+            # Pre-count per-company for filtering
+            company_message_count[company_name] = (
+                company_message_count.get(company_name, 0) + 1
+            )
 
-                    result = mcp_client.send_message(
-                        employee_profile_url=profile_url,
-                        employee_name=employee.get("name", ""),
-                        message=message_text,
-                        email=state["user_credentials"]["email"],
-                        password=state["user_credentials"]["password"],
-                        trace_id=trace_id,
-                    )
-
-                    # Include role in result for grouping
-                    result["_role"] = role
-                    message_results.append(result)
-
-                    sent = result.get("sent", False)
-                    self._db.record_message(
-                        profile_url,
-                        employee.get("name", ""),
-                        sent,
-                        result.get("method", ""),
-                        result.get("error"),
-                    )
-                    if sent:
-                        messages_sent = self._db.increment_daily_quota()
-
-                except Exception as e:
-                    error_msg = f"Failed to send message to {employee.get('name', '')}: {str(e)}"
-                    logger.error(error_msg)
-                    self._db.record_message(
-                        profile_url,
-                        employee.get("name", ""),
-                        False,
-                        "",
-                        str(e),
-                    )
-                    message_results.append(
-                        {
-                            "employee_profile_url": profile_url,
-                            "employee_name": employee.get("name", ""),
-                            "sent": False,
-                            "method": "",
-                            "error": str(e),
-                            "_role": role,
-                        }
-                    )
-
-            successful = sum(1 for r in message_results if r.get("sent"))
-
+        if not messages_to_send:
+            logger.info("No messages to send after filtering")
             return {
-                "message_results": message_results,
+                "message_results": [],
                 "messages_sent_today": messages_sent,
-                "current_status": f"Sent {successful}/{len(message_results)} messages",
+                "current_status": "No messages to send",
             }
 
+        logger.info(f"Sending batch of {len(messages_to_send)} messages")
+
+        # === Phase B: Batch send via single MCP call (one browser) ===
+        try:
+            mcp_client = LinkedInMCPClientSync()
+            batch_results = mcp_client.send_messages_batch(
+                messages=messages_to_send,
+                email=state["user_credentials"]["email"],
+                password=state["user_credentials"]["password"],
+                trace_id=trace_id,
+            )
         except Exception as e:
-            error_msg = f"Message sending failed: {str(e)}"
+            error_msg = f"Batch message sending failed: {str(e)}"
+            logger.error(error_msg)
             return {
                 "errors": state.get("errors", []) + [error_msg],
                 "current_status": "Message sending failed",
             }
+
+        # === Phase C: Process results ===
+        message_results = []
+        for i, result in enumerate(batch_results):
+            meta = message_metadata[i] if i < len(message_metadata) else {}
+            role = meta.get("role", "Other")
+
+            # Ensure result is a dict
+            if not isinstance(result, dict):
+                result = dict(result)
+
+            result["_role"] = role
+            message_results.append(result)
+
+            sent = result.get("sent", False)
+            self._db.record_message(
+                meta.get("profile_url", ""),
+                meta.get("name", ""),
+                sent,
+                result.get("method", ""),
+                result.get("error"),
+            )
+            if sent:
+                messages_sent = self._db.increment_daily_quota()
+
+        successful = sum(1 for r in message_results if r.get("sent"))
+
+        return {
+            "message_results": message_results,
+            "messages_sent_today": messages_sent,
+            "current_status": f"Sent {successful}/{len(message_results)} messages",
+        }
 
     # === Phase 1: Search Only ===
 
@@ -472,6 +508,7 @@ class EmployeeOutreachAgent:
         employees_with_templates: List[Dict[str, Any]],
         user_credentials: Dict[str, str],
         daily_limit: int,
+        max_per_company: Optional[int] = None,
         trace_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute Phase 2: send messages with per-employee templates.
@@ -480,6 +517,7 @@ class EmployeeOutreachAgent:
             employees_with_templates: Employees with _template, _template_vars, _role fields
             user_credentials: LinkedIn credentials {email, password}
             daily_limit: Maximum messages to send
+            max_per_company: Maximum messages per company (anti-spam)
             trace_id: Deprecated - trace_id is now read from context
 
         Returns:
@@ -492,6 +530,7 @@ class EmployeeOutreachAgent:
             "Starting send phase",
             employees_count=len(employees_with_templates),
             daily_limit=daily_limit,
+            max_per_company=max_per_company,
         )
 
         initial_state = OutreachAgentState(
@@ -508,6 +547,7 @@ class EmployeeOutreachAgent:
             daily_message_limit=daily_limit,
             messages_sent_today=0,
             total_limit=None,
+            max_per_company=max_per_company,
             exclude_companies=None,
             exclude_profile_urls=None,
         )

@@ -155,27 +155,25 @@ class LinkedInMCPClient:
 
         return await self._call_tool("search_employees", arguments)
 
-    async def send_message(
+    async def send_messages_batch(
         self,
-        employee_profile_url: str,
-        employee_name: str,
-        message: str,
+        messages: List[Dict[str, Any]],
         email: str,
         password: str,
         trace_id: str = None,
-    ) -> Dict[str, Any]:
-        """Send a message or connection request to a LinkedIn user via MCP protocol."""
+    ) -> List[Dict[str, Any]]:
+        """Send multiple messages using a single browser session via MCP."""
+        import json
+
         arguments = {
-            "employee_profile_url": employee_profile_url,
-            "employee_name": employee_name,
-            "message": message,
+            "messages": json.dumps(messages),
             "email": email,
             "password": password,
         }
         if trace_id:
             arguments["trace_id"] = trace_id
 
-        return await self._call_tool("send_message", arguments)
+        return await self._call_tool("send_messages_batch", arguments)
 
     async def search_employees_batch(
         self,

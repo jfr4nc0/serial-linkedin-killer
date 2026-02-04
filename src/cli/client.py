@@ -741,6 +741,13 @@ class JobApplicationCLI:
             # Display role groups
             self.ui.print_role_groups(role_groups)
 
+            # Let user fix LLM misclassifications before proceeding
+            reassignments = {}
+            if interactive:
+                role_groups, reassignments = self.ui.prompt_role_reassignment(
+                    role_groups
+                )
+
             # === Select Role Groups ===
             if interactive:
                 selected_roles = self.ui.prompt_group_selection(role_groups)
@@ -755,6 +762,139 @@ class JobApplicationCLI:
             self.ui.console.print(
                 f"\nSelected groups: [bold cyan]{', '.join(selected_roles)}[/bold cyan]\n"
             )
+
+            # === Show company distribution and recipient selection options ===
+            max_per_company = None
+            selected_employee_urls: set[str] | None = None  # None = all, set = specific
+
+            if interactive:
+                # Build flat list of employees in selected roles with company info
+                all_employees_in_selection: list[dict] = []
+                for role in selected_roles:
+                    for emp in role_groups.get(role, []):
+                        all_employees_in_selection.append({**emp, "_role": role})
+
+                # Calculate employees per company
+                company_counts: dict[str, int] = {}
+                company_employees: dict[str, list[dict]] = {}
+                for emp in all_employees_in_selection:
+                    company = emp.get("company_name", "Unknown")
+                    company_counts[company] = company_counts.get(company, 0) + 1
+                    if company not in company_employees:
+                        company_employees[company] = []
+                    company_employees[company].append(emp)
+
+                # Show top companies with most employees
+                sorted_companies = sorted(
+                    company_counts.items(), key=lambda x: x[1], reverse=True
+                )
+                if sorted_companies:
+                    self.ui.console.print(
+                        "\n[bold]Employees per company (top 10):[/bold]"
+                    )
+                    for company, count in sorted_companies[:10]:
+                        self.ui.console.print(f"  {company}: {count}")
+                    if len(sorted_companies) > 10:
+                        self.ui.console.print(
+                            f"  ... and {len(sorted_companies) - 10} more companies"
+                        )
+
+                # Selection menu
+                self.ui.console.print(
+                    "\n[bold]How do you want to select recipients?[/bold]"
+                )
+                self.ui.console.print("  1. Send to all employees in selected groups")
+                self.ui.console.print("  2. Set max per company limit")
+                self.ui.console.print("  3. Select specific employees")
+
+                selection_choice = (
+                    self.ui.console.input("\nChoice [1]: ").strip() or "1"
+                )
+
+                if selection_choice == "2":
+                    # Max per company
+                    max_per_company_input = self.ui.console.input(
+                        "Max messages per company: "
+                    ).strip()
+                    if max_per_company_input:
+                        try:
+                            max_per_company = int(max_per_company_input)
+                            if max_per_company < 1:
+                                max_per_company = None
+                        except ValueError:
+                            pass
+
+                    if max_per_company:
+                        limited_total = sum(
+                            min(count, max_per_company)
+                            for count in company_counts.values()
+                        )
+                        self.ui.console.print(
+                            f"\nLimiting to [bold yellow]{max_per_company}[/bold yellow] per company "
+                            f"(~{limited_total} messages instead of {sum(company_counts.values())})"
+                        )
+
+                elif selection_choice == "3":
+                    # Select specific employees
+                    selected_employee_urls = set()
+
+                    self.ui.console.print("\n[bold]Select employees by company:[/bold]")
+                    self.ui.console.print(
+                        "For each company, enter employee numbers to include (comma-separated)"
+                    )
+                    self.ui.console.print(
+                        "Press Enter to skip company, 'all' to include all, 'q' to finish\n"
+                    )
+
+                    for company in sorted(company_employees.keys()):
+                        emps = company_employees[company]
+                        self.ui.console.print(
+                            f"\n[bold cyan]{company}[/bold cyan] ({len(emps)} employees):"
+                        )
+
+                        for i, emp in enumerate(emps, 1):
+                            role = emp.get("_role", "")
+                            self.ui.console.print(
+                                f"  {i}. {emp.get('name', 'Unknown')} - {emp.get('title', 'N/A')} [{role}]"
+                            )
+
+                        choice = (
+                            self.ui.console.input(
+                                "Include (e.g. 1,2,3 or 'all' or Enter to skip): "
+                            )
+                            .strip()
+                            .lower()
+                        )
+
+                        if choice == "q":
+                            break
+                        elif choice == "all":
+                            for emp in emps:
+                                url = emp.get("profile_url", "")
+                                if url:
+                                    selected_employee_urls.add(url)
+                        elif choice:
+                            try:
+                                indices = [int(x.strip()) for x in choice.split(",")]
+                                for idx in indices:
+                                    if 1 <= idx <= len(emps):
+                                        url = emps[idx - 1].get("profile_url", "")
+                                        if url:
+                                            selected_employee_urls.add(url)
+                            except ValueError:
+                                self.ui.console.print(
+                                    "Invalid input, skipping company", style="yellow"
+                                )
+
+                    if selected_employee_urls:
+                        self.ui.console.print(
+                            f"\n[bold green]Selected {len(selected_employee_urls)} employees[/bold green]"
+                        )
+                    else:
+                        self.ui.console.print(
+                            "\nNo employees selected.", style="yellow"
+                        )
+                        return
 
             # === Prompt Templates Per Role Group ===
             selected_groups_config = {}
@@ -799,15 +939,34 @@ class JobApplicationCLI:
                         role, count, role_default
                     )
 
-                    # Preview and confirm
-                    confirmed = self.ui.print_message_preview(
-                        role, template, variables, sample_employee
-                    )
-                    if not confirmed:
-                        # Let user re-enter
-                        template, variables = self.ui.prompt_template_for_role(
-                            role, count, None
+                    # Preview-edit-confirm loop
+                    while True:
+                        result = self.ui.print_message_preview(
+                            role, template, variables, sample_employee
                         )
+                        if result == "confirm":
+                            break
+                        elif result == "edit":
+                            template = self.ui.edit_in_editor(
+                                template,
+                                header_comment=(
+                                    f"Editing template for: {role}\n\n"
+                                    "Available placeholders:\n"
+                                    "  {employee_name}  - Full name\n"
+                                    "  {first_name}     - First name only\n"
+                                    "  {company_name}   - Company name\n"
+                                    "  {employee_title} - Job title\n"
+                                    "  {my_name}        - Your name\n"
+                                    "  {my_role}        - Your role/title\n"
+                                    "  {topic}          - Topic/reason for outreach\n"
+                                    "  {custom_closing} - Custom closing"
+                                ),
+                            )
+                        else:
+                            # reject: re-enter from scratch
+                            template, variables = self.ui.prompt_template_for_role(
+                                role, count, role_default
+                            )
                 else:
                     # Non-interactive: use role template or fallback
                     if not role_default:
@@ -824,14 +983,26 @@ class JobApplicationCLI:
                     "template_variables": variables,
                 }
 
+            # Review all templates before sending
+            if interactive:
+                selected_groups_config = self.ui.review_all_templates(
+                    selected_groups_config, role_groups
+                )
+
             # Final confirmation
             total_to_send = sum(
                 len(role_groups.get(role, [])) for role in selected_roles
             )
+
             if interactive:
-                if not typer.confirm(
-                    f"\nSend messages to {total_to_send} employees in {len(selected_roles)} groups?"
-                ):
+                if selected_employee_urls:
+                    confirm_msg = f"\nSend messages to {len(selected_employee_urls)} selected employees?"
+                elif max_per_company:
+                    confirm_msg = f"\nSend messages (max {max_per_company}/company) to {len(selected_roles)} groups?"
+                else:
+                    confirm_msg = f"\nSend messages to {total_to_send} employees in {len(selected_roles)} groups?"
+
+                if not typer.confirm(confirm_msg):
                     self.ui.console.print("Cancelled.", style="yellow")
                     return
 
@@ -846,6 +1017,12 @@ class JobApplicationCLI:
                 "credentials": {"email": email, "password": password},
                 "warm_up": warm_up,
             }
+            if max_per_company:
+                send_payload["max_per_company"] = max_per_company
+            if selected_employee_urls:
+                send_payload["selected_employees"] = list(selected_employee_urls)
+            if reassignments:
+                send_payload["reassignments"] = reassignments
 
             client = self._get_http_client()
             resp = client.post(f"{base_url}/api/outreach/send", json=send_payload)

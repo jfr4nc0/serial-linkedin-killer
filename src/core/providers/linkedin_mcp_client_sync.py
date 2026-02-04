@@ -109,26 +109,17 @@ class LinkedInMCPClientSync:
             )
         )
 
-    def send_message(
+    def send_messages_batch(
         self,
-        employee_profile_url: str,
-        employee_name: str,
-        message: str,
+        messages: List[Dict[str, Any]],
         email: str,
         password: str,
         trace_id: str = None,
-    ) -> Dict[str, Any]:
-        """Synchronous wrapper for send_message."""
+    ) -> List[Dict[str, Any]]:
+        """Synchronous wrapper for send_messages_batch."""
         client = self._get_connected_client()
         return self._run(
-            client.send_message(
-                employee_profile_url,
-                employee_name,
-                message,
-                email,
-                password,
-                trace_id,
-            )
+            client.send_messages_batch(messages, email, password, trace_id)
         )
 
     def search_employees_batch(
