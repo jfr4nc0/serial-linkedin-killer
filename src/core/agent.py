@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
+from src.config.trace_context import get_trace_id, set_trace_id
 from src.core.agents.tools.cv_analysis_tools import analyze_cv_structure, read_pdf_cv
 from src.core.agents.tools.cv_loader import extract_cv_analysis, load_cv_data
 from src.core.db.agent_db import AgentDB
@@ -15,7 +16,6 @@ from src.core.model.job_search_request import JobSearchRequest
 from src.core.observability.langfuse_config import get_langfuse_config_for_langgraph
 from src.core.providers.linkedin_mcp_client_sync import LinkedInMCPClientSync
 from src.core.providers.llm_client import get_llm_client
-from src.core.utils.logging_config import get_core_agent_logger
 
 
 class JobApplicationAgent:
@@ -60,14 +60,13 @@ class JobApplicationAgent:
 
     def search_jobs_node(self, state: JobApplicationAgentState) -> Dict[str, Any]:
         """Search for jobs using all provided search criteria via MCP protocol."""
-        trace_id = state.get("trace_id", str(uuid.uuid4()))
-        agent_logger = get_core_agent_logger(trace_id)
+        trace_id = get_trace_id()
 
         all_jobs = []
         current_index = 0
 
         try:
-            agent_logger.info(
+            logger.info(
                 "Starting job search", searches_count=len(state["job_searches"])
             )
             mcp_client = LinkedInMCPClientSync(self.server_host, self.server_port)
@@ -75,7 +74,7 @@ class JobApplicationAgent:
             for search_request in state["job_searches"]:
                 try:
                     # Call LinkedIn MCP search_jobs tool with trace_id
-                    agent_logger.info(
+                    logger.info(
                         "Searching jobs",
                         job_title=search_request["job_title"],
                         location=search_request["location"],
@@ -199,11 +198,10 @@ class JobApplicationAgent:
 
     def apply_to_jobs_node(self, state: JobApplicationAgentState) -> Dict[str, Any]:
         """Apply to filtered jobs using the LinkedIn MCP easy apply tool."""
-        trace_id = state.get("trace_id", str(uuid.uuid4()))
-        agent_logger = get_core_agent_logger(trace_id)
+        trace_id = get_trace_id()
 
         try:
-            agent_logger.info(
+            logger.info(
                 "Starting job applications", jobs_count=len(state["filtered_jobs"])
             )
             # Prepare application requests, skipping already-applied jobs
@@ -211,7 +209,7 @@ class JobApplicationAgent:
             for job in state["filtered_jobs"]:
                 job_id = str(job["id_job"])
                 if self._db.was_already_applied(job_id):
-                    agent_logger.info(f"Skipping job {job_id}: already applied")
+                    logger.info(f"Skipping job {job_id}: already applied")
                     continue
 
                 monthly_salary = state["job_searches"][0]["monthly_salary"]
@@ -288,17 +286,14 @@ class JobApplicationAgent:
         Returns:
             Final agent state with all results
         """
-        # Generate single trace_id for this entire agent run
-        trace_id = str(uuid.uuid4())
-
-        # Get logger for this run
-        agent_logger = get_core_agent_logger(trace_id)
+        # Set trace context for this entire agent run
+        trace_id = set_trace_id()
 
         # Load CV data from JSON
         try:
             cv_data = load_cv_data(cv_data_path)
             cv_analysis = extract_cv_analysis(cv_data)
-            agent_logger.info(
+            logger.info(
                 "CV data loaded successfully",
                 name=cv_data.get("name"),
                 skills_count=len(cv_analysis["skills"]),
@@ -306,7 +301,7 @@ class JobApplicationAgent:
             )
         except Exception as e:
             error_msg = f"Failed to load CV data: {str(e)}"
-            agent_logger.error(error_msg)
+            logger.error(error_msg)
             # Return error state
             return JobApplicationAgentState(
                 job_searches=job_searches,
@@ -325,7 +320,7 @@ class JobApplicationAgent:
                 trace_id=trace_id,
             )
 
-        agent_logger.info(
+        logger.info(
             "Starting core agent run",
             job_searches_count=len(job_searches),
             cv_data_path=cv_data_path or "./data/cv_data.json",
@@ -369,7 +364,7 @@ class JobApplicationAgent:
         else:
             final_state = self.graph.invoke(initial_state, config=invoke_config)
 
-        agent_logger.info(
+        logger.info(
             "Core agent run completed",
             total_jobs_found=final_state.get("total_jobs_found", 0),
             total_jobs_applied=final_state.get("total_jobs_applied", 0),

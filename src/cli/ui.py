@@ -830,10 +830,10 @@ class TerminalUI:
                 }
             )
 
-        # Simple template rendering for preview
-        preview = template
-        for key, value in preview_vars.items():
-            preview = preview.replace(f"{{{key}}}", value)
+        # Use render_template for preview (extracts first name from employee_name)
+        from src.core.agents.tools.message_template import render_template
+
+        preview = render_template(template, preview_vars)
 
         panel = Panel(
             preview,

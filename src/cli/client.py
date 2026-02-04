@@ -17,10 +17,7 @@ from rich.panel import Panel
 
 from src.cli.config import CLIConfig, JobSearchConfig
 from src.cli.ui import TerminalUI
-from src.core.utils.logging_config import (
-    configure_core_agent_logging,
-    get_core_agent_logger,
-)
+from src.core.utils.logging_config import configure_core_agent_logging
 
 
 class JobApplicationCLI:
@@ -663,15 +660,22 @@ class JobApplicationCLI:
                     f"Excluding [bold yellow]{len(exclude_people)}[/bold yellow] people\n"
                 )
 
+            import time as _time
+
             from rich.live import Live
             from rich.spinner import Spinner
             from rich.text import Text
 
             # Submit search (returns immediately with task_id)
+            t_submit = _time.perf_counter()
             client = self._get_http_client()
             resp = client.post(f"{base_url}/api/outreach/search", json=search_payload)
             resp.raise_for_status()
             search_task_id = resp.json()["task_id"]
+            t_post_submit = _time.perf_counter()
+            self.ui.console.print(
+                f"[dim][TIMING] Task submitted in {round((t_post_submit - t_submit) * 1000, 2)}ms[/dim]"
+            )
 
             # Poll Kafka for search results
             from src.core.api.schemas.outreach_schemas import OutreachSearchResponse
@@ -680,20 +684,37 @@ class JobApplicationCLI:
 
             consumer = KafkaResultConsumer(
                 bootstrap_servers=self._get_kafka_servers(),
-                group_id=f"cli-search-{search_task_id[:8]}",
             )
 
-            with Live(
-                Spinner("dots", text="Searching employees and clustering by role..."),
+            from rich.status import Status
+
+            t_pre_consume = _time.perf_counter()
+
+            # Simple spinner with elapsed time - no fake progress
+            with Status(
+                "Searching employees and clustering by role...",
                 console=self.ui.console,
-            ) as live:
+                spinner="dots",
+            ) as status:
                 search_result_msg = consumer.consume(
                     TOPIC_OUTREACH_SEARCH_RESULTS,
                     search_task_id,
                     OutreachSearchResponse,
                     timeout=3600.0,
                 )
-                live.update(Text("Search complete!", style="bold green"))
+
+            t_post_consume = _time.perf_counter()
+            elapsed_sec = round(t_post_consume - t_pre_consume, 1)
+            self.ui.console.print(
+                f"[bold green]Search complete![/bold green] [dim]({elapsed_sec}s)[/dim]"
+            )
+
+            self.ui.console.print(
+                f"[dim][TIMING] Kafka consume took {round((t_post_consume - t_pre_consume) * 1000, 2)}ms[/dim]"
+            )
+            self.ui.console.print(
+                f"[dim][TIMING] Total wait from submit: {round((t_post_consume - t_submit) * 1000, 2)}ms[/dim]"
+            )
 
             if search_result_msg is None:
                 self.ui.console.print(
@@ -845,7 +866,6 @@ class JobApplicationCLI:
 
             consumer = KafkaResultConsumer(
                 bootstrap_servers=self._get_kafka_servers(),
-                group_id=f"cli-send-{task_id[:8]}",
             )
 
             with Live(

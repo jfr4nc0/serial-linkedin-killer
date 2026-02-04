@@ -40,13 +40,7 @@ def configure_langfuse_for_mcp() -> Optional["LangfuseCallbackHandler"]:
             session_id=f"linkedin-mcp-{os.getpid()}",  # Unique session per MCP server process
         )
 
-        # Use MCP logger with trace_id
-        from src.linkedin_mcp.utils.logging_config import get_mcp_logger
-
-        mcp_logger = get_mcp_logger()
-        mcp_logger.info(
-            f"LinkedIn MCP Langfuse observability configured - host: {host}"
-        )
+        logger.info(f"LinkedIn MCP Langfuse observability configured - host: {host}")
         return callback_handler
 
     except ImportError:

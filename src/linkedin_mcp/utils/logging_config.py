@@ -8,6 +8,8 @@ from typing import Optional
 from dotenv import load_dotenv
 from loguru import logger
 
+from src.config.trace_context import configure_trace_logging, get_trace_id, set_trace_id
+
 # Load environment variables
 load_dotenv()
 
@@ -89,36 +91,39 @@ def configure_mcp_logging(
             serialize=False,  # Use human-readable format
         )
 
-        # Get logger with default trace_id for startup messages
-        startup_logger = logger.bind(trace_id=default_trace_id)
-        startup_logger.info(
+    # Configure centralized trace context (auto-injects trace_id into all logs)
+    configure_trace_logging()
+
+    # Set default trace_id for startup
+    set_trace_id(default_trace_id)
+    if log_file:
+        logger.info(
             f"LinkedIn MCP logging configured - file: {log_file}, level: {log_level}"
         )
     else:
-        # Get logger with default trace_id for startup messages
-        startup_logger = logger.bind(trace_id=default_trace_id)
-        startup_logger.info(
+        logger.info(
             f"LinkedIn MCP logging configured - console only, level: {log_level}"
         )
 
 
 def get_mcp_logger(trace_id: Optional[str] = None) -> "logger":
     """
-    Get a logger instance bound with trace_id for LinkedIn MCP.
-    Always ensures a trace_id is present.
+    Get a logger instance for LinkedIn MCP.
+
+    Note: trace_id is now automatically injected via trace_context.
+    Use set_trace_id() at request entry points instead of passing trace_id here.
 
     Args:
-        trace_id: UUID trace ID for correlation (generates new UUID if None)
+        trace_id: Deprecated - use set_trace_id() instead.
 
     Returns:
-        Logger instance with bound trace_id
+        Logger instance (trace_id auto-injected from context)
     """
-    import uuid
+    # For backward compatibility, set trace_id if provided
+    if trace_id is not None:
+        set_trace_id(trace_id)
 
-    if trace_id is None:
-        trace_id = str(uuid.uuid4())
-
-    return logger.bind(trace_id=trace_id)
+    return logger
 
 
 def log_mcp_server_startup(server_info: dict) -> None:

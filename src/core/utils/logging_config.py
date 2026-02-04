@@ -8,6 +8,8 @@ from typing import Optional
 from dotenv import load_dotenv
 from loguru import logger
 
+from src.config.trace_context import configure_trace_logging, get_trace_id
+
 # Load environment variables
 load_dotenv()
 
@@ -45,10 +47,8 @@ def configure_core_agent_logging(
         "trace_id={extra[trace_id]} - <level>{message}</level>"
     )
 
-    # Ensure trace_id is always present in extra
-    logger.configure(
-        patcher=lambda record: record["extra"].setdefault("trace_id", "no-trace")
-    )
+    # Configure centralized trace context (auto-injects trace_id into all logs)
+    configure_trace_logging()
 
     # Add console handler
     logger.add(
@@ -108,21 +108,24 @@ def configure_core_agent_logging(
 
 def get_core_agent_logger(trace_id: Optional[str] = None) -> "logger":
     """
-    Get a logger instance bound with trace_id for the core agent.
-    Always ensures a trace_id is present.
+    Get a logger instance for the core agent.
+
+    Note: trace_id is now automatically injected via trace_context.
+    Use set_trace_id() at request entry points instead of passing trace_id here.
 
     Args:
-        trace_id: UUID trace ID for correlation (generates new UUID if None)
+        trace_id: Deprecated - use set_trace_id() instead.
 
     Returns:
-        Logger instance with bound trace_id
+        Logger instance (trace_id auto-injected from context)
     """
-    import uuid
+    from src.config.trace_context import set_trace_id
 
-    if trace_id is None:
-        trace_id = str(uuid.uuid4())
+    # For backward compatibility, set trace_id if provided
+    if trace_id is not None:
+        set_trace_id(trace_id)
 
-    return logger.bind(trace_id=trace_id)
+    return logger
 
 
 def log_core_agent_startup(trace_id: str, config: dict) -> None:

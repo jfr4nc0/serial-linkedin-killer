@@ -3,6 +3,7 @@
 from typing import Any, Dict, List
 
 from langgraph.graph import END, StateGraph
+from loguru import logger
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.linkedin_mcp.interfaces.services import IBrowserManager
@@ -13,9 +14,6 @@ from src.linkedin_mcp.utils.linkedin_selectors import (
     clean_profile_url,
     extract_name_from_element,
 )
-from src.linkedin_mcp.utils.logging_config import get_mcp_logger
-
-logger = get_mcp_logger()
 
 
 class EmployeeSearchGraph:
