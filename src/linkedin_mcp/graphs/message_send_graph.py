@@ -362,59 +362,7 @@ class MessageSendGraph:
         try:
             driver = state["browser_manager"].driver
 
-            # Wait for modal dialog to appear (check shadow DOM first, then regular DOM)
-            modal = None
-            try:
-                # Try shadow DOM first
-                modal = self._find_in_shadow_dom(
-                    driver, "div[role='dialog'], .artdeco-modal"
-                )
-                if modal:
-                    print(
-                        f"[DEBUG] Modal found in shadow DOM: {modal.get_attribute('class')}"
-                    )
-                else:
-                    # Fallback to regular DOM
-                    modal = WebDriverWait(driver, 5).until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, "div[role='dialog'], .artdeco-modal")
-                        )
-                    )
-                    print(
-                        f"[DEBUG] Modal found in regular DOM: {modal.get_attribute('class')}"
-                    )
-            except Exception as e:
-                print(f"[DEBUG] Modal NOT found in regular DOM: {e}")
-
             state["browser_manager"].random_delay(1, 2)
-
-            # DEBUG: Log buttons in shadow DOM
-            try:
-                shadow_buttons = driver.execute_script(
-                    """
-                    const shadowHost = document.querySelector('#interop-outlet');
-                    if (shadowHost && shadowHost.shadowRoot) {
-                        const buttons = shadowHost.shadowRoot.querySelectorAll('button');
-                        return Array.from(buttons).map(b => ({
-                            ariaLabel: b.getAttribute('aria-label') || '',
-                            text: b.textContent.trim().substring(0, 50),
-                            className: b.className
-                        }));
-                    }
-                    return [];
-                """
-                )
-                print(f"[DEBUG] Buttons in shadow DOM: {len(shadow_buttons)}")
-                for i, btn in enumerate(shadow_buttons):
-                    if (
-                        "note" in btn.get("ariaLabel", "").lower()
-                        or "note" in btn.get("text", "").lower()
-                    ):
-                        print(
-                            f"[DEBUG]   Button {i}: aria='{btn.get('ariaLabel')}', text='{btn.get('text')}', class='{btn.get('className')}'"
-                        )
-            except Exception as e:
-                print(f"[DEBUG] Error scanning shadow DOM buttons: {e}")
 
             # Try multiple approaches to find and click "Add a note"
             add_note_btn = None
@@ -425,7 +373,6 @@ class MessageSendGraph:
                     """
                     const shadowHost = document.querySelector('#interop-outlet');
                     if (shadowHost && shadowHost.shadowRoot) {
-                        // Try multiple selectors inside shadow root
                         return shadowHost.shadowRoot.querySelector('button[aria-label="Add a note"]') ||
                                shadowHost.shadowRoot.querySelector('button.artdeco-button--secondary') ||
                                Array.from(shadowHost.shadowRoot.querySelectorAll('button')).find(b => b.textContent.includes('Add a note'));
@@ -433,16 +380,14 @@ class MessageSendGraph:
                     return null;
                 """
                 )
-                print(f"[DEBUG] Approach 1 (shadow DOM): {add_note_btn}")
-            except Exception as e:
-                print(f"[DEBUG] Approach 1 error: {e}")
+            except Exception:
+                pass
 
             # Approach 2: Standard selectors fallback (for non-shadow DOM cases)
             if not add_note_btn:
                 add_note_btn = self._find_element_multi(
                     driver, self.ADD_NOTE_SELECTORS, timeout=2, clickable=True
                 )
-                print(f"[DEBUG] Approach 2 (selectors): {add_note_btn}")
 
             # Approach 3: JavaScript query on main DOM
             if not add_note_btn:
@@ -454,26 +399,10 @@ class MessageSendGraph:
                                Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Add a note'));
                     """
                     )
-                    print(f"[DEBUG] Approach 3 (JS): {add_note_btn}")
-                except Exception as e:
-                    print(f"[DEBUG] Approach 3 error: {e}")
+                except Exception:
+                    pass
 
             if not add_note_btn:
-                # DEBUG: Dump shadow DOM content for inspection
-                try:
-                    shadow_html = driver.execute_script(
-                        """
-                        const shadowHost = document.querySelector('#interop-outlet');
-                        if (shadowHost && shadowHost.shadowRoot) {
-                            const modal = shadowHost.shadowRoot.querySelector('div[role="dialog"], .artdeco-modal');
-                            return modal ? modal.innerHTML.substring(0, 2000) : 'No modal in shadow DOM';
-                        }
-                        return 'No shadow root found';
-                    """
-                    )
-                    print(f"[DEBUG] Shadow DOM modal content:\n{shadow_html}")
-                except Exception as e:
-                    print(f"[DEBUG] Error dumping shadow DOM: {e}")
                 return {
                     **state,
                     "sent": False,
@@ -492,36 +421,10 @@ class MessageSendGraph:
             # Try shadow DOM first (LinkedIn uses #custom-message inside shadow DOM)
             state["browser_manager"].random_delay(0.5, 1)  # Wait for textarea to appear
 
-            # Debug: Check shadow DOM structure
-            try:
-                debug_info = driver.execute_script(
-                    """
-                    const shadowHost = document.querySelector('#interop-outlet');
-                    if (!shadowHost) return {error: 'No #interop-outlet found'};
-                    if (!shadowHost.shadowRoot) return {error: 'No shadowRoot on #interop-outlet'};
-
-                    const customMsg = shadowHost.shadowRoot.querySelector('#custom-message');
-                    const textarea = shadowHost.shadowRoot.querySelector('textarea');
-                    const allTextareas = shadowHost.shadowRoot.querySelectorAll('textarea');
-
-                    return {
-                        customMessageFound: !!customMsg,
-                        customMessageTag: customMsg ? customMsg.tagName : null,
-                        textareaFound: !!textarea,
-                        textareaCount: allTextareas.length,
-                        textareaIds: Array.from(allTextareas).map(t => t.id || '(no id)')
-                    };
-                """
-                )
-                print(f"[DEBUG] Shadow DOM textarea search: {debug_info}")
-            except Exception as e:
-                print(f"[DEBUG] Error in textarea debug: {e}")
-
             note_field = self._find_in_shadow_dom(
                 driver,
                 "#custom-message, div.connect-button-send-invite__custom-message-box, textarea[name='message'], textarea",
             )
-            print(f"[DEBUG] note_field from _find_in_shadow_dom: {note_field}")
 
             if not note_field:
                 # Try direct JS query
@@ -535,15 +438,13 @@ class MessageSendGraph:
                         return null;
                     """
                     )
-                    print(f"[DEBUG] note_field from direct JS: {note_field}")
-                except Exception as e:
-                    print(f"[DEBUG] Direct JS error: {e}")
+                except Exception:
+                    pass
 
             if not note_field:
                 note_field = self._find_element_multi(
                     driver, self.NOTE_TEXTAREA_SELECTORS
                 )
-                print(f"[DEBUG] note_field from regular DOM: {note_field}")
 
             if not note_field:
                 return {**state, "sent": False, "error": "Could not find note textarea"}
