@@ -760,6 +760,28 @@ class TerminalUI:
 
         return self.console.input(prompt) or default
 
+    # === Contacted Companies ===
+
+    def print_contacted_companies(self, companies: list) -> None:
+        """Display table of already-contacted companies."""
+        if not companies:
+            self.console.print("[dim]No companies have been contacted yet.[/dim]")
+            return
+
+        table = Table(title="Already Contacted Companies", show_lines=False)
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Company", style="cyan")
+        table.add_column("Employees Messaged", justify="right", style="green")
+
+        for i, company in enumerate(companies, 1):
+            table.add_row(
+                str(i),
+                company.get("company_name", "Unknown"),
+                str(company.get("employee_count", 0)),
+            )
+
+        self.console.print(table)
+
     # === Role Group Methods ===
 
     def print_role_groups(self, role_groups: Dict[str, List[Dict[str, Any]]]) -> None:

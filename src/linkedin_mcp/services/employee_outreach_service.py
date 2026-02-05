@@ -23,6 +23,17 @@ from src.linkedin_mcp.services.browser_manager_service import (
 from src.linkedin_mcp.services.linkedin_auth_service import LinkedInAuthService
 
 
+def _normalize_company_url(url: str) -> str:
+    """Extract company slug from LinkedIn URL for flexible matching.
+
+    Handles: "https://www.linkedin.com/company/acme/", "linkedin.com/company/acme", "acme"
+    """
+    url = url.strip().lower().rstrip("/")
+    if "/company/" in url:
+        return url.split("/company/")[-1].split("/")[0]
+    return url
+
+
 class EmployeeOutreachService(IEmployeeOutreachService):
     """Orchestrates authentication, employee search, and message sending."""
 
@@ -105,7 +116,10 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         if trace_id:
             set_trace_id(trace_id)
 
-        exclude_companies_set = set(exclude_companies or [])
+        # Normalize company URLs for flexible matching (handles trailing slashes, etc.)
+        exclude_companies_set = {
+            _normalize_company_url(url) for url in (exclude_companies or [])
+        }
         exclude_urls_set = set(exclude_profile_urls or [])
         try:
             self._ensure_authenticated(user_credentials)
@@ -113,9 +127,12 @@ class EmployeeOutreachService(IEmployeeOutreachService):
             results = []
             total_collected = 0
             for i, company in enumerate(companies):
-                # Skip excluded companies
-                if company["company_linkedin_url"] in exclude_companies_set:
-                    logger.info(f"Skipping excluded company: {company['company_name']}")
+                # Skip excluded companies (compare normalized slugs)
+                company_slug = _normalize_company_url(company["company_linkedin_url"])
+                if company_slug in exclude_companies_set:
+                    logger.info(
+                        f"Skipping excluded company: {company['company_name']} ({company_slug})"
+                    )
                     continue
                 # Check total limit before searching next company
                 if total_limit is not None and total_collected >= total_limit:
@@ -135,24 +152,15 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                     f"(limit: {company_limit})"
                 )
                 try:
+                    # Pass exclusions to graph so it skips them during extraction
+                    # (fills limit with non-excluded employees)
                     employees = self.employee_search_graph.execute(
                         company["company_linkedin_url"],
                         company["company_name"],
                         company_limit,
                         self.browser_manager,
+                        exclude_profile_urls=exclude_urls_set,
                     )
-                    # Filter out already-messaged employees
-                    if exclude_urls_set:
-                        before = len(employees)
-                        employees = [
-                            e
-                            for e in employees
-                            if e.get("profile_url", "") not in exclude_urls_set
-                        ]
-                        if before != len(employees):
-                            logger.info(
-                                f"Filtered {before - len(employees)} already-messaged employees from {company['company_name']}"
-                            )
                     total_collected += len(employees)
                     # Write to shared DB if session_factory available
                     if self._session_factory and batch_id and employees:

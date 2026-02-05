@@ -91,3 +91,18 @@ class OutreachSendResponse(BaseModel):
     results_by_role: Dict[str, Dict[str, Any]]
     errors: List[str]
     trace_id: str
+
+
+# Contacted companies
+class ContactedCompany(BaseModel):
+    """A company that has been contacted."""
+
+    company_name: str
+    company_linkedin_url: str
+    employee_count: int
+
+
+class ContactedCompaniesResponse(BaseModel):
+    """Response with list of contacted companies."""
+
+    companies: List[ContactedCompany]

@@ -122,6 +122,10 @@ class EmployeeSearchGraph:
                     if profile_url in extracted_urls:
                         continue
 
+                    # Skip excluded profile URLs (already messaged)
+                    if profile_url in state.get("exclude_profile_urls", set()):
+                        continue
+
                     # Extract name
                     try:
                         name_el = LinkedInEmployeeSelectors.NAME.find_element(card)
@@ -222,8 +226,15 @@ class EmployeeSearchGraph:
         company_name: str,
         limit: int,
         authenticated_browser_manager: IBrowserManager,
+        exclude_profile_urls: set = None,
     ) -> List[EmployeeResult]:
-        """Execute the employee search workflow with pre-authenticated browser."""
+        """Execute the employee search workflow with pre-authenticated browser.
+
+        Args:
+            exclude_profile_urls: Profile URLs to skip during search (e.g., already messaged).
+                                  Exclusion happens during extraction so the limit is filled
+                                  with non-excluded employees.
+        """
         logger.info(f"Starting employee search for {company_name} (limit: {limit})")
 
         initial_state = EmployeeSearchState(
@@ -232,6 +243,7 @@ class EmployeeSearchGraph:
             browser_manager=authenticated_browser_manager,
             collected_employees=[],
             extracted_urls=set(),
+            exclude_profile_urls=exclude_profile_urls or set(),
             limit=limit,
             errors=[],
         )

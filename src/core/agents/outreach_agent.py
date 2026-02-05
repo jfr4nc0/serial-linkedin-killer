@@ -162,8 +162,8 @@ class EmployeeOutreachAgent:
             # Read actual employee data from shared DB
             db_results = self._db.get_search_results(batch_id)
             for emp in db_results:
-                emp["company_name"] = emp.pop("company_name", "Unknown")
-                emp.pop("company_linkedin_url", None)
+                emp["company_name"] = emp.get("company_name", "Unknown")
+                # Keep company_linkedin_url for tracking contacted companies
                 all_employees.append(emp)
 
             # Cleanup search results from DB
@@ -239,6 +239,8 @@ class EmployeeOutreachAgent:
                 {
                     "profile_url": profile_url,
                     "name": employee.get("name", ""),
+                    "company_name": employee.get("company_name", ""),
+                    "company_linkedin_url": employee.get("company_linkedin_url", ""),
                 }
             )
 
@@ -286,6 +288,8 @@ class EmployeeOutreachAgent:
                 sent,
                 result.get("method", ""),
                 result.get("error"),
+                company_name=meta.get("company_name"),
+                company_linkedin_url=meta.get("company_linkedin_url"),
             )
             if sent:
                 messages_sent = self._db.increment_daily_quota()
@@ -373,6 +377,7 @@ class EmployeeOutreachAgent:
                     "profile_url": profile_url,
                     "name": employee.get("name", ""),
                     "company_name": company_name,
+                    "company_linkedin_url": employee.get("company_linkedin_url", ""),
                     "role": role,
                 }
             )
@@ -429,6 +434,8 @@ class EmployeeOutreachAgent:
                 sent,
                 result.get("method", ""),
                 result.get("error"),
+                company_name=meta.get("company_name"),
+                company_linkedin_url=meta.get("company_linkedin_url"),
             )
             if sent:
                 messages_sent = self._db.increment_daily_quota()

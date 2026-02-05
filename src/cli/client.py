@@ -625,6 +625,40 @@ class JobApplicationCLI:
                 )
                 return
 
+            # === Show already-contacted companies and let user choose ===
+            client = self._get_http_client()
+            if interactive:
+                try:
+                    resp = client.get(f"{base_url}/api/outreach/contacted-companies")
+                    resp.raise_for_status()
+                    contacted = resp.json().get("companies", [])
+
+                    if contacted:
+                        self.ui.print_contacted_companies(contacted)
+
+                        include_contacted = (
+                            self.ui.console.input(
+                                "\nInclude already-contacted companies in search? [y/N]: "
+                            )
+                            .strip()
+                            .lower()
+                        )
+
+                        if include_contacted != "y":
+                            contacted_urls = [
+                                c["company_linkedin_url"] for c in contacted
+                            ]
+                            exclude_companies = list(
+                                set(exclude_companies + contacted_urls)
+                            )
+                            self.ui.console.print(
+                                f"[dim]Excluding {len(contacted_urls)} already-contacted companies[/dim]\n"
+                            )
+                except Exception as e:
+                    self.ui.console.print(
+                        f"[dim]Could not fetch contacted companies: {e}[/dim]"
+                    )
+
             # === PHASE 1: Search & Cluster ===
             self.ui.console.print(
                 "\n[bold cyan]Phase 1: Searching employees and clustering by role...[/bold cyan]\n"

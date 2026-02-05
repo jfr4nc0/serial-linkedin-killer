@@ -33,6 +33,10 @@ class MessageSent(Base):
 
     employee_profile_url = Column(String, primary_key=True)
     employee_name = Column(String)
+    company_name = Column(String)
+    company_linkedin_url = Column(
+        String, index=True
+    )  # For querying contacted companies
     sent_at = Column(Float)
     success = Column(Integer, index=True)  # For batch queries filtering by success
     method = Column(String)
