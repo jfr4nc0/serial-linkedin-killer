@@ -78,7 +78,7 @@ class BrowserManagerService(IBrowserManager):
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-software-rasterizer")
         options.add_argument("--renderer-process-limit=1")
-        options.add_argument("--js-flags=--max-old-space-size=256")
+        options.add_argument("--js-flags=--max-old-space-size=512")
 
         # Use ~/chrome directory for user data with undetected-chromedriver
         chrome_user_data = os.path.expanduser("~/chrome")
@@ -147,8 +147,56 @@ class BrowserManagerService(IBrowserManager):
             )
             return webdriver.Chrome(service=service, options=options)
 
+    def _is_browser_alive(self) -> bool:
+        """Check if the current browser session is still responsive."""
+        if not self.driver:
+            return False
+        try:
+            _ = self.driver.title
+            return True
+        except Exception:
+            return False
+
+    def _kill_zombie_chrome(self):
+        """Kill orphaned chrome/chromedriver processes from previous crashed sessions."""
+        chrome_user_data = os.path.expanduser("~/chrome")
+        try:
+            import psutil
+
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    name = (proc.info["name"] or "").lower()
+                    if name not in (
+                        "chrome",
+                        "chromium",
+                        "chromedriver",
+                        "google-chrome",
+                    ):
+                        continue
+                    cmdline = " ".join(proc.info.get("cmdline") or [])
+                    if f"--user-data-dir={chrome_user_data}" in cmdline:
+                        proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except ImportError:
+            pass
+
     def start_browser(self) -> webdriver.Chrome:
-        """Start and configure the browser based on browser_type."""
+        """Start and configure the browser based on browser_type.
+
+        Reuses an existing browser if it is still responsive.
+        Cleans up zombie Chrome processes before starting a fresh one.
+        """
+        # Reuse existing browser if still alive
+        if self._is_browser_alive():
+            return self.driver
+
+        # Existing driver is dead — clean it up without starting a new one
+        if self.driver:
+            self.close_browser()
+
+        # Kill any zombie chrome processes from previous crashed sessions
+        self._kill_zombie_chrome()
 
         if self.browser_type == "firefox":
             print("Starting Firefox...")

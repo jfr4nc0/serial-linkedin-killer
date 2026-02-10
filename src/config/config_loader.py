@@ -136,11 +136,13 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
                 obj = getattr(obj, part)
             field = parts[-1]
             field_info = type(obj).model_fields[field]
-            cast_value = (
-                field_info.annotation(value)
-                if field_info.annotation in (int, float, bool)
-                else value
-            )
+            if field_info.annotation is bool:
+                # bool("false") returns True in Python — handle explicitly
+                cast_value = value.lower() not in ("false", "0", "no", "off", "")
+            elif field_info.annotation in (int, float):
+                cast_value = field_info.annotation(value)
+            else:
+                cast_value = value
             setattr(obj, field, cast_value)
 
     if config_path is None:

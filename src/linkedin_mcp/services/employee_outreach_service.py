@@ -54,8 +54,17 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         self.auth_service = LinkedInAuthService()
 
     def _ensure_authenticated(self, user_credentials: Dict[str, str]) -> None:
-        """Start browser and authenticate if needed."""
+        """Start browser and authenticate if needed.
+
+        Skips the full login flow if the browser is already open and logged in,
+        avoiding ~20s of wasted timeouts looking for non-existent login fields.
+        """
         self.browser_manager.start_browser()
+
+        # Skip full auth flow if already logged in (saves ~20s of timeouts)
+        if self.auth_service.is_authenticated(self.browser_manager):
+            logger.info("Already authenticated, skipping login flow")
+            return
 
         auth_result = self.auth_service.authenticate(
             user_credentials["email"],

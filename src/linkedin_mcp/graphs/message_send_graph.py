@@ -231,7 +231,19 @@ class MessageSendGraph:
         try:
             driver = state["browser_manager"].driver
             driver.get(state["employee_profile_url"])
-            state["browser_manager"].random_delay(2, 3)
+
+            # Wait for profile page to actually render (up to 10s)
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, ".pv-top-card, .scaffold-layout, main")
+                    )
+                )
+            except Exception:
+                # Fallback: blind wait if selectors changed
+                state["browser_manager"].random_delay(3, 5)
+
+            state["browser_manager"].random_delay(0.5, 1)
             return state
         except Exception as e:
             return {**state, "error": f"Failed to navigate to profile: {str(e)}"}
