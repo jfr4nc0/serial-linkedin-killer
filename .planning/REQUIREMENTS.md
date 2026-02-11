@@ -22,8 +22,8 @@
 ### Dependency & Integration
 
 - [x] **DEP-01**: `langchain-google-genai` added as Poetry dependency
-- [ ] **INT-01**: Role clustering (`cluster_employees_by_role`) works with Gemini provider without code changes to `role_clustering.py`
-- [ ] **INT-02**: Langfuse tracing works with Gemini provider (LangChain callback compatibility)
+- [x] **INT-01**: Role clustering (`cluster_employees_by_role`) works with Gemini provider without code changes to `role_clustering.py`
+- [x] **INT-02**: Langfuse tracing works with Gemini provider (LangChain callback compatibility)
 
 ### Configuration Files
 
@@ -62,8 +62,8 @@
 | LLM-04 | Phase 2 | Complete |
 | CFG-01 | Phase 2 | Complete |
 | CFG-02 | Phase 2 | Complete |
-| INT-01 | Phase 3 | Pending |
-| INT-02 | Phase 3 | Pending |
+| INT-01 | Phase 3 | Complete |
+| INT-02 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 13 total
@@ -72,4 +72,4 @@
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after Phase 2 completion*
+*Last updated: 2026-02-11 after Phase 3 completion — ALL v1 REQUIREMENTS COMPLETE*
