@@ -55,24 +55,24 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CACHE-01 | — | Pending |
-| CACHE-02 | — | Pending |
-| QUERY-01 | — | Pending |
-| QUERY-02 | — | Pending |
-| QUERY-03 | — | Pending |
-| MON-01 | — | Pending |
-| MON-02 | — | Pending |
-| MON-03 | — | Pending |
-| STATE-01 | — | Pending |
-| STATE-02 | — | Pending |
-| DEDUP-01 | — | Pending |
-| DEDUP-02 | — | Pending |
+| CACHE-01 | Phase 4 | Pending |
+| CACHE-02 | Phase 4 | Pending |
+| QUERY-03 | Phase 4 | Pending |
+| QUERY-01 | Phase 5 | Pending |
+| QUERY-02 | Phase 5 | Pending |
+| STATE-01 | Phase 6 | Pending |
+| STATE-02 | Phase 6 | Pending |
+| DEDUP-01 | Phase 6 | Pending |
+| DEDUP-02 | Phase 6 | Pending |
+| MON-01 | Phase 7 | Pending |
+| MON-02 | Phase 7 | Pending |
+| MON-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v2.2 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12 (pending roadmap)
+- Mapped to phases: 12/12 (100%)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after initial definition*
+*Last updated: 2026-02-11 after roadmap creation*
