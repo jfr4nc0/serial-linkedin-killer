@@ -51,19 +51,19 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROV-01 | Phase 1 | Pending |
-| PROV-02 | Phase 1 | Pending |
-| PROV-03 | Phase 1 | Pending |
-| PROV-04 | Phase 1 | Pending |
-| LLM-01 | Phase 1 | Pending |
-| LLM-02 | Phase 1 | Pending |
-| LLM-03 | Phase 1 | Pending |
-| LLM-04 | Phase 1 | Pending |
 | DEP-01 | Phase 1 | Pending |
-| INT-01 | Phase 2 | Pending |
-| INT-02 | Phase 2 | Pending |
-| CFG-01 | Phase 1 | Pending |
-| CFG-02 | Phase 1 | Pending |
+| PROV-01 | Phase 2 | Pending |
+| PROV-02 | Phase 2 | Pending |
+| PROV-03 | Phase 2 | Pending |
+| PROV-04 | Phase 2 | Pending |
+| LLM-01 | Phase 2 | Pending |
+| LLM-02 | Phase 2 | Pending |
+| LLM-03 | Phase 2 | Pending |
+| LLM-04 | Phase 2 | Pending |
+| CFG-01 | Phase 2 | Pending |
+| CFG-02 | Phase 2 | Pending |
+| INT-01 | Phase 3 | Pending |
+| INT-02 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 13 total
@@ -72,4 +72,4 @@
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after initial definition*
+*Last updated: 2026-02-11 after roadmap creation*
