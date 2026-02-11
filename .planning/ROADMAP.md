@@ -45,10 +45,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. `_title_cache` in role_clustering.py automatically evicts old entries when size limit is reached
   2. `_instances` weakref list in BrowserManagerService contains no dead references when accessed
   3. `company_loader.py` pandas read_csv path is deleted and cannot be called
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 04-01: [To be planned]
+- [ ] 04-01-PLAN.md — Bounded caches, weakref pruning, and dead code removal (CACHE-01, CACHE-02, QUERY-03)
 
 ---
 
@@ -109,7 +109,7 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 1. Dependency Setup | v2.1 | 1/1 | ✓ Complete | 2026-02-11 |
 | 2. Provider Configuration & Client Factory | v2.1 | 1/1 | ✓ Complete | 2026-02-11 |
 | 3. Integration & Validation | v2.1 | 1/1 | ✓ Complete | 2026-02-11 |
-| 4. Quick Wins | v2.2 | 0/TBD | Not started | — |
+| 4. Quick Wins | v2.2 | 0/1 | Not started | — |
 | 5. Streaming Queries | v2.2 | 0/TBD | Not started | — |
 | 6. State Optimization | v2.2 | 0/TBD | Not started | — |
 | 7. Memory Monitoring | v2.2 | 0/TBD | Not started | — |
