@@ -159,6 +159,8 @@ class OutreachService:
             clustered = cluster_employees_by_role(
                 employees, progress_callback=log_progress
             )
+            employee_count = len(employees)
+            del employees  # Free flat list -- data now lives in clustered dict only
 
             t_post_cluster = time.perf_counter()
             logger.info(
@@ -182,6 +184,9 @@ class OutreachService:
                         for k, v in clustered.items()
                     }
 
+                employee_count = len(employees)
+                del employees  # Free segment-filtered list -- data lives in clustered dict
+
             # Store only clustered in session (no duplicate employees list)
             t_pre_session = time.perf_counter()
             session_id = self._session_store.create(
@@ -198,7 +203,7 @@ class OutreachService:
                 "Search and cluster complete",
                 task_id=task_id,
                 session_id=session_id,
-                total_employees=len(employees),
+                total_employees=employee_count,
                 companies=len(companies),
             )
 
@@ -206,7 +211,7 @@ class OutreachService:
             response = OutreachSearchResponse(
                 session_id=session_id,
                 role_groups=clustered,
-                total_employees=len(employees),
+                total_employees=employee_count,
                 companies_processed=len(companies),
                 trace_id=trace_id,
             )
