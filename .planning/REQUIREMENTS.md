@@ -9,14 +9,14 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ### Bounded Caches
 
-- [ ] **CACHE-01**: `_title_cache` in role_clustering.py uses LRU eviction with configurable max size (default 10,000 entries)
-- [ ] **CACHE-02**: `_instances` weakref list in BrowserManagerService prunes dead references before each access
+- [x] **CACHE-01**: `_title_cache` in role_clustering.py uses LRU eviction with configurable max size (default 10,000 entries)
+- [x] **CACHE-02**: `_instances` weakref list in BrowserManagerService prunes dead references before each access
 
 ### Streaming Queries
 
 - [ ] **QUERY-01**: `CompanyDB.filter_companies()` yields results in chunks instead of loading all matching rows into memory
 - [ ] **QUERY-02**: `AgentDB.get_search_results()` returns results in paginated chunks instead of `.all()`
-- [ ] **QUERY-03**: `company_loader.py` pandas `read_csv()` path is removed (dead code, 5GB landmine)
+- [x] **QUERY-03**: `company_loader.py` pandas `read_csv()` path is removed (dead code, 5GB landmine)
 
 ### Memory Monitoring
 
@@ -55,9 +55,9 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CACHE-01 | Phase 4 | Pending |
-| CACHE-02 | Phase 4 | Pending |
-| QUERY-03 | Phase 4 | Pending |
+| CACHE-01 | Phase 4 | Complete |
+| CACHE-02 | Phase 4 | Complete |
+| QUERY-03 | Phase 4 | Complete |
 | QUERY-01 | Phase 5 | Pending |
 | QUERY-02 | Phase 5 | Pending |
 | STATE-01 | Phase 6 | Pending |
@@ -75,4 +75,4 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after roadmap creation*
+*Last updated: 2026-02-11 after Phase 4 completion*
