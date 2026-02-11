@@ -165,3 +165,10 @@ def test_db_filter_empty_means_all(company_db):
 def test_db_filter_case_insensitive(company_db):
     results = company_db.filter_companies({"country": ["GERMANY"]})
     assert len(results) == 2
+
+
+def test_db_filter_companies_chunk_size(company_db):
+    """Verify chunk_size doesn't affect correctness."""
+    results = company_db.filter_companies({"country": ["germany"]}, chunk_size=1)
+    assert len(results) == 2
+    assert all(r["country"] == "germany" for r in results)
