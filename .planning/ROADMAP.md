@@ -57,10 +57,10 @@ Plans:
   2. Role clustering produces correct classifications when using Gemini (same quality as local LLM)
   3. Langfuse tracing captures Gemini LLM calls with provider identification in trace metadata
   4. User can switch between local and Gemini providers via config change without application restart
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 03-01: [Plan not yet created]
+- [ ] 03-01-PLAN.md — Langfuse callback pre-binding and integration validation tests
 
 ## Progress
 
@@ -71,4 +71,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. Dependency Setup | 1/1 | ✓ Complete | 2026-02-11 |
 | 2. Provider Configuration & Client Factory | 1/1 | ✓ Complete | 2026-02-11 |
-| 3. Integration & Validation | 0/TBD | Not started | - |
+| 3. Integration & Validation | 0/1 | Not started | - |
