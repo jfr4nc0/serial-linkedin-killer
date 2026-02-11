@@ -3,7 +3,7 @@
 import json
 import time
 from datetime import date
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Iterator, Optional, Union
 
 from sqlalchemy import Engine, text
 
@@ -237,24 +237,25 @@ class AgentDB:
                 )
             session.commit()
 
-    def get_search_results(self, batch_id: str) -> list:
-        """Read all employees for a batch_id, returned as list of dicts."""
+    def get_search_results(self, batch_id: str, chunk_size: int = 500) -> Iterator[dict]:
+        """Yield employee dicts for a batch_id in chunks (memory-efficient).
+
+        Uses yield_per to stream rows lazily without materializing all ORM objects at once.
+        """
         with self._session_factory() as session:
             rows = (
                 session.query(SearchResult)
                 .filter(SearchResult.batch_id == batch_id)
-                .all()
+                .yield_per(chunk_size)
             )
-            return [
-                {
+            for r in rows:
+                yield {
                     "company_name": r.company_name,
                     "company_linkedin_url": r.company_linkedin_url,
                     "name": r.employee_name,
                     "title": r.employee_title,
                     "profile_url": r.employee_profile_url,
                 }
-                for r in rows
-            ]
 
     def delete_search_results(self, batch_id: str) -> int:
         """Delete all search results for a batch_id."""

@@ -9,6 +9,7 @@ import pytest
 from src.config.config_loader import AgentConfig, load_config
 from src.core.agents.tools.company_db import CompanyDB
 from src.core.agents.tools.message_template import render_template
+from src.core.db.agent_db import AgentDB
 
 
 @pytest.fixture
@@ -172,3 +173,54 @@ def test_db_filter_companies_chunk_size(company_db):
     results = company_db.filter_companies({"country": ["germany"]}, chunk_size=1)
     assert len(results) == 2
     assert all(r["country"] == "germany" for r in results)
+
+
+# --- AgentDB Tests ---
+
+
+@pytest.fixture
+def agent_db():
+    """Create an in-memory AgentDB for testing."""
+    db = AgentDB("sqlite:///:memory:")
+    yield db
+
+
+def test_get_search_results_returns_iterable(agent_db):
+    """Verify get_search_results returns an iterable that yields correct dicts."""
+    agent_db.save_search_results(
+        "batch1",
+        "Acme Corp",
+        "linkedin.com/company/acme",
+        [{"name": "Alice", "title": "Engineer", "profile_url": "linkedin.com/in/alice"}]
+    )
+    results = agent_db.get_search_results("batch1")
+    results_list = list(results)
+
+    assert len(results_list) == 1
+    emp = results_list[0]
+    assert emp["name"] == "Alice"
+    assert emp["title"] == "Engineer"
+    assert emp["profile_url"] == "linkedin.com/in/alice"
+    assert emp["company_name"] == "Acme Corp"
+    assert emp["company_linkedin_url"] == "linkedin.com/company/acme"
+
+
+def test_get_search_results_chunk_size(agent_db):
+    """Verify chunk_size doesn't affect correctness."""
+    employees = [
+        {"name": f"Employee{i}", "title": f"Title{i}", "profile_url": f"linkedin.com/in/emp{i}"}
+        for i in range(5)
+    ]
+    agent_db.save_search_results("batch2", "BigCo", "linkedin.com/company/bigco", employees)
+
+    results = list(agent_db.get_search_results("batch2", chunk_size=2))
+
+    assert len(results) == 5
+    names = {r["name"] for r in results}
+    assert names == {f"Employee{i}" for i in range(5)}
+
+
+def test_get_search_results_empty(agent_db):
+    """Verify empty result set works correctly."""
+    results = list(agent_db.get_search_results("nonexistent"))
+    assert results == []

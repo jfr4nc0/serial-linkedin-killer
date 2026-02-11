@@ -160,6 +160,7 @@ class EmployeeOutreachAgent:
             )
 
             # Read actual employee data from shared DB
+            # Lazy generator — streams rows in chunks via yield_per to avoid ORM memory spike
             db_results = self._db.get_search_results(batch_id)
             for emp in db_results:
                 emp["company_name"] = emp.get("company_name", "Unknown")
