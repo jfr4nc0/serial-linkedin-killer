@@ -66,8 +66,7 @@ class EmployeeSearchGraph:
 
         except Exception as e:
             return {
-                "errors": state["errors"]
-                + [f"Failed to navigate to people page: {str(e)}"],
+                "errors": [f"Failed to navigate to people page: {str(e)}"],
             }
 
     def _extract_employees(self, state: EmployeeSearchState) -> Dict[str, Any]:
@@ -85,7 +84,7 @@ class EmployeeSearchGraph:
             except Exception:
                 logger.warning("No employee cards found on page")
                 return {
-                    "errors": state["errors"] + ["No employee cards found on page"],
+                    "errors": ["No employee cards found on page"],
                 }
 
             cards = LinkedInEmployeeSelectors.CARD.find_elements(driver)
@@ -165,13 +164,13 @@ class EmployeeSearchGraph:
             )
 
             return {
-                "collected_employees": state["collected_employees"] + new_employees,
+                "collected_employees": new_employees,
                 "extracted_urls": extracted_urls,
             }
 
         except Exception as e:
             return {
-                "errors": state["errors"] + [f"Failed to extract employees: {str(e)}"],
+                "errors": [f"Failed to extract employees: {str(e)}"],
             }
 
     def _should_load_more(self, state: EmployeeSearchState) -> str:
@@ -217,7 +216,7 @@ class EmployeeSearchGraph:
 
         except Exception as e:
             return {
-                "errors": state["errors"] + [f"Failed to load more results: {str(e)}"],
+                "errors": [f"Failed to load more results: {str(e)}"],
             }
 
     def execute(
