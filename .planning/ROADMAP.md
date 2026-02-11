@@ -76,10 +76,11 @@ Plans:
   2. `JobSearchGraph` pagination loop does not create intermediate list copies on each iteration
   3. Clustered employee data exists in only 1-2 in-memory copies (not 3+) during outreach processing
   4. Intermediate employee lists in `outreach_agent.py` are cleared after use
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 06-01: [To be planned]
+- [ ] 06-01-PLAN.md — LangGraph Annotated reducers for employee and job search graphs (STATE-01, STATE-02)
+- [ ] 06-02-PLAN.md — Memory deduplication in outreach service and agent (DEDUP-01, DEDUP-02)
 
 ---
 
@@ -111,5 +112,5 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 3. Integration & Validation | v2.1 | 1/1 | ✓ Complete | 2026-02-11 |
 | 4. Quick Wins | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
 | 5. Streaming Queries | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
-| 6. State Optimization | v2.2 | 0/TBD | Not started | — |
+| 6. State Optimization | v2.2 | 0/2 | Not started | — |
 | 7. Memory Monitoring | v2.2 | 0/TBD | Not started | — |
