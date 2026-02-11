@@ -14,8 +14,8 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ### Streaming Queries
 
-- [ ] **QUERY-01**: `CompanyDB.filter_companies()` yields results in chunks instead of loading all matching rows into memory
-- [ ] **QUERY-02**: `AgentDB.get_search_results()` returns results in paginated chunks instead of `.all()`
+- [x] **QUERY-01**: `CompanyDB.filter_companies()` yields results in chunks instead of loading all matching rows into memory
+- [x] **QUERY-02**: `AgentDB.get_search_results()` returns results in paginated chunks instead of `.all()`
 - [x] **QUERY-03**: `company_loader.py` pandas `read_csv()` path is removed (dead code, 5GB landmine)
 
 ### Memory Monitoring
@@ -58,8 +58,8 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 | CACHE-01 | Phase 4 | Complete |
 | CACHE-02 | Phase 4 | Complete |
 | QUERY-03 | Phase 4 | Complete |
-| QUERY-01 | Phase 5 | Pending |
-| QUERY-02 | Phase 5 | Pending |
+| QUERY-01 | Phase 5 | Complete |
+| QUERY-02 | Phase 5 | Complete |
 | STATE-01 | Phase 6 | Pending |
 | STATE-02 | Phase 6 | Pending |
 | DEDUP-01 | Phase 6 | Pending |
@@ -75,4 +75,4 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after Phase 4 completion*
+*Last updated: 2026-02-11 after Phase 5 completion*

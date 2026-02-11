@@ -29,7 +29,7 @@
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 4: Quick Wins** — Bounded caches and dead code removal (completed 2026-02-11)
-- [ ] **Phase 5: Streaming Queries** — Paginated DB access replaces `.all()`
+- [x] **Phase 5: Streaming Queries** — Paginated DB access replaces `.all()` (completed 2026-02-11)
 - [ ] **Phase 6: State Optimization** — Memory-efficient LangGraph data flow
 - [ ] **Phase 7: Memory Monitoring** — RAM usage tracking with circuit breakers
 
@@ -63,7 +63,7 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 05-01-PLAN.md — Chunked filter_companies and generator-based get_search_results (QUERY-01, QUERY-02)
+- [x] 05-01-PLAN.md — Chunked filter_companies and generator-based get_search_results (QUERY-01, QUERY-02) — completed 2026-02-11
 
 ---
 
@@ -110,6 +110,6 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 2. Provider Configuration & Client Factory | v2.1 | 1/1 | ✓ Complete | 2026-02-11 |
 | 3. Integration & Validation | v2.1 | 1/1 | ✓ Complete | 2026-02-11 |
 | 4. Quick Wins | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
-| 5. Streaming Queries | v2.2 | 0/1 | Not started | — |
+| 5. Streaming Queries | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
 | 6. State Optimization | v2.2 | 0/TBD | Not started | — |
 | 7. Memory Monitoring | v2.2 | 0/TBD | Not started | — |
