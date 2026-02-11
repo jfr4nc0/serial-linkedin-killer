@@ -14,17 +14,24 @@ CLI (local)
   │                  ├── JobApplicationAgent (LangGraph)
   │                  └── EmployeeOutreachAgent (LangGraph)
   │                        ↓
-  │                  Kafka Producer → [job-results / outreach-results]
+  │                  MCP Client → LinkedIn MCP Server (HTTP)
+  │                        ↓                ↓
+  │                  Shared DB ←── MCP writes SearchResult rows per-company
   │                        ↓
-  └── Kafka Consumer ← receives results
-                              ↓
-                  LinkedIn MCP Server (Docker) → Selenium browser automation
+  │                  Kafka ← MCP publishes MCPSearchComplete
+  │                        ↓
+  │                  Core Agent reads results from DB
+  │                        ↓
+  │                  Kafka Producer → [outreach-search-results / outreach-results]
+  │                        ↓
+  └── Kafka Consumer ← CLI receives results
 ```
 
 **Services (docker-compose):**
 - `kafka` — KRaft mode, message broker
 - `core-agent` — FastAPI API on port 8080, orchestrates workflows
 - `linkedin-mcp-server` — FastMCP server on port 3000, browser automation
+- `shared DB` — SQLite, used by both core-agent and MCP for search results
 
 ## Quick Start
 
@@ -50,15 +57,24 @@ poetry run python scripts/cli.py --help
 
 ## Outreach Workflow (Two-Phase)
 
-The outreach workflow uses role-based clustering to target employees by job function:
+The outreach workflow uses role-based clustering to target employees by job function, with optional B2C/B2B segment filtering:
 
 ```
-Phase 1: Search & Cluster (synchronous)
+Phase 1: Search & Cluster (async via Kafka)
   ├── Filter companies by industry/country/size
-  ├── Search employees at each company via LinkedIn
-  └── Cluster employees by role using LLM classification
+  ├── Optionally limit number of companies (--company-limit)
+  ├── Search employees at each company via LinkedIn MCP
+  │     └── MCP writes results to shared DB, publishes completion to Kafka
+  ├── Cluster employees by role using LLM classification
+  ├── Optionally filter by B2C or B2B segment
+  └── Results delivered via Kafka topic: outreach-search-results
         ↓
-  Role Groups: Engineering, Finance, Sales, Marketing, HR/People, Operations, Executive, Other
+  Role Groups:
+    B2C: Engineering, Finance, Investment Banking / M&A, Strategy Consulting, Crypto / Web3
+    B2B: Broker_Exchange_HeadOfProduct, WealthManager_PortfolioManager,
+         Fintech_ProductManager, FamilyOffice_CIO, Insurance_HeadOfProduct,
+         Corporate_Treasurer_CFO, Boutique_FundManager
+    General: Sales, Marketing, HR/People, Operations, Executive, Other
         ↓
 Phase 2: Message (async via Kafka)
   ├── User selects which role groups to message
@@ -71,12 +87,14 @@ Phase 2: Message (async via Kafka)
 poetry run python scripts/cli.py outreach --interactive
 
 # 1. Select company filters (industry, country, size)
-# 2. API searches employees and clusters by role
-# 3. See role groups with employee counts
-# 4. Select which groups to message
-# 5. Enter message template for each group
-# 6. Preview and confirm
-# 7. Messages sent, results displayed by role
+# 2. Set total employee limit and company limit (optional)
+# 3. Choose B2C/B2B/both segment
+# 4. API searches employees and clusters by role
+# 5. See role groups with employee counts
+# 6. Select which groups to message
+# 7. Enter message template for each group
+# 8. Preview and confirm
+# 9. Messages sent, results displayed by role
 ```
 
 ## CLI Commands
@@ -87,6 +105,9 @@ poetry run python scripts/cli.py run
 
 # Employee outreach (interactive, two-phase)
 poetry run python scripts/cli.py outreach --interactive
+
+# Outreach with total employee limit
+poetry run python scripts/cli.py outreach --interactive --total-limit 100
 
 # Outreach with config (non-interactive)
 poetry run python scripts/cli.py outreach --no-interactive
@@ -112,8 +133,8 @@ poetry run python scripts/cli.py validate
 | `GET` | `/health` | Health check |
 | `POST` | `/api/jobs/apply` | Submit job application workflow |
 | `GET` | `/api/outreach/filters` | Get filter values (industry, country, size) |
-| `POST` | `/api/outreach/search` | Phase 1: Search employees, cluster by role (sync) |
-| `POST` | `/api/outreach/send` | Phase 2: Send messages to selected groups (async) |
+| `POST` | `/api/outreach/search` | Phase 1: Search & cluster (async, returns task_id, results via Kafka) |
+| `POST` | `/api/outreach/send` | Phase 2: Send messages to selected groups (async, results via Kafka) |
 | `POST` | `/api/outreach/run` | Legacy: Single-phase outreach (async) |
 
 **Phase 1 - Search & Cluster:**
@@ -122,20 +143,14 @@ curl -X POST http://localhost:8080/api/outreach/search \
   -H "Content-Type: application/json" \
   -d '{
     "filters": {"industry": ["Technology"], "country": ["United States"]},
-    "credentials": {"email": "...", "password": "..."}
+    "credentials": {"email": "...", "password": "..."},
+    "total_limit": 100,
+    "company_limit": 50,
+    "segment": "b2b"
   }'
 
-# Response:
-# {
-#   "session_id": "uuid",
-#   "role_groups": {
-#     "Engineering": [{"name": "...", "title": "...", "profile_url": "..."}],
-#     "Sales": [...],
-#     ...
-#   },
-#   "total_employees": 42,
-#   "companies_processed": 5
-# }
+# Response: { "task_id": "uuid" }
+# Results delivered via Kafka topic: outreach-search-results
 ```
 
 **Phase 2 - Send Messages:**
@@ -163,6 +178,15 @@ curl -X POST http://localhost:8080/api/outreach/send \
 # Response: { "task_id": "uuid" }
 # Results delivered via Kafka topic: outreach-results
 ```
+
+## Kafka Topics
+
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `job-results` | Core → CLI | Job application workflow results |
+| `outreach-search-results` | Core → CLI | Phase 1 search & cluster results |
+| `outreach-results` | Core → CLI | Phase 2 message sending results |
+| `mcp-search-complete` | MCP → Core | MCP signals batch search completion |
 
 ## Configuration
 
@@ -233,16 +257,26 @@ CSV at `data/free_company_dataset.csv`, imported into SQLite via `import-dataset
 
 The LLM clusters employee job titles into these categories:
 
-| Category | Example Titles |
-|----------|----------------|
-| Engineering | Software Engineer, DevOps, Architect, QA |
-| Finance | CFO, Financial Analyst, Controller, Accountant |
-| Sales | Sales Rep, Account Executive, SDR, Business Dev |
-| Marketing | Marketing Manager, Content, Growth, Brand |
-| HR/People | Recruiter, Talent Acquisition, People Ops |
-| Operations | Project Manager, Program Manager, Supply Chain |
-| Executive | CEO, CTO, VP, Director, Head of |
-| Other | Unclassified titles |
+| Segment | Category | Example Titles |
+|---------|----------|----------------|
+| B2C | Engineering | Software Engineer, DevOps, Architect, QA |
+| B2C | Finance | CFO, Financial Analyst, Controller, Accountant |
+| B2C | Investment Banking / M&A | Managing Director, VP of M&A, Deal Analyst |
+| B2C | Strategy Consulting | Strategy Consultant, Management Consultant |
+| B2C | Crypto / Web3 | Blockchain Developer, DeFi Analyst |
+| B2B | Broker_Exchange_HeadOfProduct | Head of Product at broker/exchange |
+| B2B | WealthManager_PortfolioManager | Portfolio Manager, Wealth Advisor |
+| B2B | Fintech_ProductManager | Product Manager at fintech |
+| B2B | FamilyOffice_CIO | CIO at family office |
+| B2B | Insurance_HeadOfProduct | Head of Product at insurance firm |
+| B2B | Corporate_Treasurer_CFO | Corporate Treasurer, CFO |
+| B2B | Boutique_FundManager | Fund Manager at boutique firm |
+| General | Sales | Sales Rep, Account Executive, SDR, Business Dev |
+| General | Marketing | Marketing Manager, Content, Growth, Brand |
+| General | HR/People | Recruiter, Talent Acquisition, People Ops |
+| General | Operations | Project Manager, Program Manager, Supply Chain |
+| General | Executive | CEO, CTO, VP, Director, Head of |
+| General | Other | Unclassified titles |
 
 ## Development
 

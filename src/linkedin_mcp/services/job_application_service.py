@@ -1,7 +1,9 @@
-import uuid
 from typing import Dict, List
 
+from loguru import logger
+
 from src.config.config_loader import load_config
+from src.config.trace_context import set_trace_id
 from src.linkedin_mcp.agents.easy_apply_agent import EasyApplyAgent
 from src.linkedin_mcp.graphs.job_application_graph import JobApplicationGraph
 from src.linkedin_mcp.interfaces.services import IJobApplicationService
@@ -15,7 +17,6 @@ from src.linkedin_mcp.services.browser_manager_service import (
     BrowserManagerService as BrowserManager,
 )
 from src.linkedin_mcp.services.linkedin_auth_service import LinkedInAuthService
-from src.linkedin_mcp.utils.logging_config import get_mcp_logger
 
 
 class JobApplicationService(IJobApplicationService):
@@ -57,8 +58,8 @@ class JobApplicationService(IJobApplicationService):
         Returns:
             List of application results with id_job, success status, and optional error message
         """
-        # Create main trace for this job application workflow
-        trace_id = str(uuid.uuid4())
+        # Set trace context for this workflow (auto-propagates to all logs)
+        trace_id = set_trace_id()
 
         # Create Langfuse trace for full workflow
         langfuse_trace = create_mcp_trace(
@@ -71,7 +72,6 @@ class JobApplicationService(IJobApplicationService):
             },
         )
 
-        logger = get_mcp_logger(trace_id)
         logger.info(
             "Starting LinkedIn job application workflow",
             applications_count=len(applications),

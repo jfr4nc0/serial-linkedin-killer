@@ -5,7 +5,7 @@ import time
 from datetime import date
 from typing import Any, Dict, Optional, Union
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from src.core.db.engine import create_db_engine, create_session_factory
 from src.core.db.models import (
@@ -117,12 +117,16 @@ class AgentDB:
         success: bool,
         method: str = None,
         error: str = None,
+        company_name: str = None,
+        company_linkedin_url: str = None,
     ):
         with self._session_factory() as session:
             session.merge(
                 MessageSent(
                     employee_profile_url=employee_profile_url,
                     employee_name=employee_name,
+                    company_name=company_name,
+                    company_linkedin_url=company_linkedin_url,
                     sent_at=time.time(),
                     success=int(success),
                     method=method,
@@ -153,6 +157,38 @@ class AgentDB:
             )
             return {row[0] for row in rows}
 
+    def get_messaged_companies(self) -> list:
+        """Return companies where at least one employee was successfully messaged.
+
+        Returns list of dicts: [{company_name, company_linkedin_url, employee_count}, ...]
+        """
+        from sqlalchemy import func
+
+        with self._session_factory() as session:
+            rows = (
+                session.query(
+                    MessageSent.company_name,
+                    MessageSent.company_linkedin_url,
+                    func.count(MessageSent.employee_profile_url).label(
+                        "employee_count"
+                    ),
+                )
+                .filter(
+                    MessageSent.success == 1,
+                    MessageSent.company_linkedin_url.isnot(None),
+                )
+                .group_by(MessageSent.company_linkedin_url)
+                .all()
+            )
+            return [
+                {
+                    "company_name": row[0] or "Unknown",
+                    "company_linkedin_url": row[1],
+                    "employee_count": row[2],
+                }
+                for row in rows
+            ]
+
     # --- Daily Quota ---
 
     def get_daily_quota(self) -> int:
@@ -164,14 +200,17 @@ class AgentDB:
     def increment_daily_quota(self) -> int:
         today = date.today().isoformat()
         with self._session_factory() as session:
-            row = session.get(DailyQuota, today)
-            if row:
-                row.count += 1
-            else:
-                row = DailyQuota(date=today, count=1)
-                session.add(row)
+            # Atomic upsert to avoid race condition between concurrent threads
+            session.execute(
+                text(
+                    "INSERT INTO daily_quota (date, count) VALUES (:date, 1) "
+                    "ON CONFLICT(date) DO UPDATE SET count = count + 1"
+                ),
+                {"date": today},
+            )
             session.commit()
-            return row.count
+            row = session.get(DailyQuota, today)
+            return row.count if row else 1
 
     # --- Search Results ---
 

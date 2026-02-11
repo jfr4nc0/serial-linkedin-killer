@@ -66,16 +66,20 @@ end
 
 DB --> SESS: session data
 deactivate DB
-SESS --> SVC: {employees, clustered, companies, trace_id}
+SESS --> SVC: {clustered, trace_id}
 deactivate SESS
+note right of SESS
+    Session contains only
+    clustered dict + trace_id
+end note
 
 == Async Task Setup ==
 
 SVC -> SVC: task_id = uuid()
 SVC -> SVC: daily_limit = config or 10 (if warm_up)
 
-SVC -> THREAD: spawn daemon thread\n_run_send(task_id, request, session)
-note over THREAD: Thread starts immediately\nbut runs in background
+SVC -> THREAD: submit to ThreadPoolExecutor\n_run_send(task_id, request, session)
+note over THREAD: Bounded pool (max_workers=4)\nwith future exception callback
 
 SVC -> SESS: delete(session_id)
 note right: Session data passed to thread,\nno longer needed in store
@@ -153,6 +157,10 @@ par Background Thread Execution
 
         AGENT -> SYNC: send_message(\nprofile_url, name, message,\ncredentials, trace_id)
         activate SYNC
+        note right of SYNC
+            Persistent connection
+            (lazy init, reused)
+        end note
 
         SYNC -> MCP: HTTP POST /mcp\ncall_tool("send_message")
         activate MCP
@@ -213,6 +221,11 @@ par Background Thread Execution
 
         alt sent == true
             AGENT -> DB: increment_daily_quota()
+            note right of DB
+                Atomic upsert:
+                INSERT ... ON CONFLICT
+                DO UPDATE SET count = count + 1
+            end note
             DB --> AGENT: new_count
         end
 
@@ -257,33 +270,23 @@ par Background Thread Execution
     deactivate THREAD
 
 else CLI Kafka Consumer
-    CLI -> CONSUMER: consume(topic, task_id,\nOutreachSendResponse, timeout=600)
+    CLI -> CONSUMER: consume(outreach-results,\ntask_id, OutreachSendResponse,\ntimeout=600)
     activate CONSUMER
+    note right of CONSUMER
+        Ephemeral consumer group_id
+        (unique per invocation)
+    end note
 
     CONSUMER -> CONSUMER: subscribe([topic])
-    CONSUMER -> CONSUMER: Log "Waiting for results"
 
     loop Poll until timeout
-        CONSUMER -> CONSUMER: poll(timeout=1.0)
+        CONSUMER -> CONSUMER: poll(timeout=5.0)
 
-        alt Message received
-            CONSUMER -> CONSUMER: Check msg.key() == task_id
-
-            alt Key matches
-                CONSUMER -> CONSUMER: Deserialize JSON
-                CONSUMER -> CONSUMER: Create OutreachSendResponse
-                CONSUMER --> CLI: response
-            else Key doesn't match
-                CONSUMER -> CONSUMER: Continue polling
-            end
-
-        else No message
+        alt Message received & key matches
+            CONSUMER -> CONSUMER: Deserialize JSON
+            CONSUMER --> CLI: OutreachSendResponse
+        else
             CONSUMER -> CONSUMER: Continue polling
-        end
-
-        alt Timeout reached
-            CONSUMER -> CONSUMER: Log "Consumer timed out"
-            CONSUMER --> CLI: None
         end
     end
 

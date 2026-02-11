@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.core.api.schemas.common import TaskResponse
 from src.core.api.schemas.outreach_schemas import (
+    ContactedCompaniesResponse,
     OutreachFiltersResponse,
     OutreachRunRequest,
     OutreachSearchRequest,
@@ -59,3 +60,15 @@ def send_messages(
         return TaskResponse(task_id=task_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/contacted-companies", response_model=ContactedCompaniesResponse)
+def get_contacted_companies() -> ContactedCompaniesResponse:
+    """Get list of companies where at least one employee has been messaged."""
+    from src.config.config_loader import load_config
+    from src.core.db.agent_db import AgentDB
+
+    config = load_config()
+    db = AgentDB(config.db.url)
+    companies = db.get_messaged_companies()
+    return ContactedCompaniesResponse(companies=companies)

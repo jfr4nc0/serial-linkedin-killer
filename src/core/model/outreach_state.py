@@ -31,6 +31,9 @@ class OutreachAgentState(TypedDict):
     # Search limits
     total_limit: Optional[int]  # Max total employees across all companies
 
+    # Send limits (anti-spam)
+    max_per_company: Optional[int]  # Max messages per company
+
     # User-provided exclusions (LinkedIn URLs)
     exclude_companies: Optional[List[str]]
     exclude_profile_urls: Optional[List[str]]

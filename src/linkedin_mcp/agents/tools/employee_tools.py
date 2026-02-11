@@ -1,5 +1,8 @@
 """MCP tools for employee search and messaging."""
 
+from loguru import logger
+
+from src.config.trace_context import set_trace_id
 from src.linkedin_mcp.model.outreach_types import EmployeeResult, MessageResult
 
 
@@ -29,77 +32,68 @@ def register_employee_tools(mcp, employee_outreach_service):
         Returns:
             List of employees with name, title, and profile_url
         """
-        from src.linkedin_mcp.utils.logging_config import get_mcp_logger
-
+        # Set trace context (auto-propagates to all logs)
         if trace_id:
-            logger = get_mcp_logger(trace_id)
-            logger.info(
-                f"Starting employee search for {company_name}",
-                company=company_name,
-                trace_id=trace_id,
-            )
+            set_trace_id(trace_id)
+
+        logger.info(
+            f"Starting employee search for {company_name}",
+            company=company_name,
+        )
 
         user_credentials = {"email": email, "password": password}
         result = employee_outreach_service.search_employees(
             company_linkedin_url, company_name, limit, user_credentials
         )
 
-        if trace_id:
-            logger.info(
-                f"Employee search completed: found {len(result)} employees",
-                employees_found=len(result),
-                trace_id=trace_id,
-            )
+        logger.info(
+            f"Employee search completed: found {len(result)} employees",
+            employees_found=len(result),
+        )
 
         return result
 
     @mcp.tool
-    def send_message(
-        employee_profile_url: str,
-        employee_name: str,
-        message: str,
+    def send_messages_batch(
+        messages: str,
         email: str,
         password: str,
         trace_id: str = None,
-    ) -> MessageResult:
+    ) -> list[dict]:
         """
-        Send a message or connection request to a LinkedIn user.
-        Automatically detects whether to send a direct message or connection request with note.
+        Send multiple messages using a single browser session.
+        Much more efficient than calling send_message per employee.
 
         Args:
-            employee_profile_url: LinkedIn profile URL of the employee
-            employee_name: Name of the employee
-            message: Message text to send (truncated to 300 chars for connection requests)
+            messages: JSON string of list of dicts with keys: profile_url, name, message, subject
             email: LinkedIn email for authentication
             password: LinkedIn password for authentication
             trace_id: Optional trace ID for correlation
 
         Returns:
-            MessageResult with sent status, method used, and optional error
+            List of MessageResult dicts with sent status per message
         """
-        from src.linkedin_mcp.utils.logging_config import get_mcp_logger
+        import json as _json
 
         if trace_id:
-            logger = get_mcp_logger(trace_id)
-            logger.info(
-                f"Sending message to {employee_name}",
-                employee=employee_name,
-                trace_id=trace_id,
-            )
+            set_trace_id(trace_id)
 
-        user_credentials = {"email": email, "password": password}
-        result = employee_outreach_service.send_message(
-            employee_profile_url, employee_name, message, user_credentials
+        parsed_messages = _json.loads(messages)
+        logger.info(
+            f"Starting batch message send: {len(parsed_messages)} messages",
         )
 
-        if trace_id:
-            logger.info(
-                f"Message send result: sent={result['sent']}, method={result.get('method', '')}",
-                sent=result["sent"],
-                trace_id=trace_id,
-            )
+        user_credentials = {"email": email, "password": password}
+        results = employee_outreach_service.send_messages_batch(
+            parsed_messages, user_credentials, trace_id=trace_id
+        )
 
-        return result
+        successful = sum(1 for r in results if r.get("sent"))
+        logger.info(
+            f"Batch send complete: {successful}/{len(results)} sent",
+        )
+
+        return results
 
     @mcp.tool
     def search_employees_batch(
@@ -128,16 +122,15 @@ def register_employee_tools(mcp, employee_outreach_service):
         Returns:
             List of results per company with employees and errors
         """
-        from src.linkedin_mcp.utils.logging_config import get_mcp_logger
-
+        # Set trace context (auto-propagates to all logs)
         if trace_id:
-            logger = get_mcp_logger(trace_id)
-            logger.info(
-                f"Starting batch employee search: {len(companies)} companies"
-                + (f", total_limit={total_limit}" if total_limit else ""),
-                companies_count=len(companies),
-                trace_id=trace_id,
-            )
+            set_trace_id(trace_id)
+
+        logger.info(
+            f"Starting batch employee search: {len(companies)} companies"
+            + (f", total_limit={total_limit}" if total_limit else ""),
+            companies_count=len(companies),
+        )
 
         user_credentials = {"email": email, "password": password}
         result = employee_outreach_service.submit_search_batch(
@@ -150,10 +143,6 @@ def register_employee_tools(mcp, employee_outreach_service):
             exclude_profile_urls=exclude_profile_urls,
         )
 
-        if trace_id:
-            logger.info(
-                f"Batch search submitted, batch_id={result['batch_id']}",
-                trace_id=trace_id,
-            )
+        logger.info(f"Batch search submitted, batch_id={result['batch_id']}")
 
         return result

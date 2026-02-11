@@ -71,14 +71,13 @@ class IEmployeeOutreachService(ABC):
         pass
 
     @abstractmethod
-    def send_message(
+    def send_messages_batch(
         self,
-        employee_profile_url: str,
-        employee_name: str,
-        message: str,
+        messages: List[Dict[str, str]],
         user_credentials: Dict[str, str],
-    ) -> dict:
-        """Send a message or connection request to an employee."""
+        trace_id: str = None,
+    ) -> list:
+        """Send multiple messages using a single browser session."""
         pass
 
 

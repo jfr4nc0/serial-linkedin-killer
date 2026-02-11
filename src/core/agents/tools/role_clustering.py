@@ -2,8 +2,9 @@
 
 import json
 import re
+import time
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
 from loguru import logger
@@ -79,18 +80,33 @@ Respond with ONLY a JSON object mapping each title to its category. Example:
 
 JSON response:"""
 
+# Batch size for LLM calls (titles per request)
+LLM_BATCH_SIZE = 50
+
+# Module-level cache: {title -> category} persists across searches within the same process
+_title_cache: Dict[str, str] = {}
+
+
+# Progress callback type: (current_batch, total_batches, titles_processed, total_titles)
+ProgressCallback = Callable[[int, int, int, int], None]
+
 
 def cluster_employees_by_role(
     employees: List[Dict[str, Any]],
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Cluster employees by role using LLM classification.
 
     Args:
         employees: List of employee dicts with at least 'title' field.
+        progress_callback: Optional callback for progress updates.
+            Called with (current_batch, total_batches, titles_processed, total_titles).
 
     Returns:
         Dict mapping role category to list of employees in that category.
     """
+    t_start = time.perf_counter()
+
     if not employees:
         return {cat: [] for cat in ROLE_CATEGORIES}
 
@@ -102,8 +118,24 @@ def cluster_employees_by_role(
     if not titles:
         return {"Other": employees}
 
-    # Get classification from LLM
-    title_to_category = _classify_titles_with_llm(titles)
+    t_pre_llm = time.perf_counter()
+    logger.info(
+        "[TIMING] Pre-LLM setup complete",
+        elapsed_ms=round((t_pre_llm - t_start) * 1000, 2),
+        unique_titles=len(titles),
+        total_employees=len(employees),
+    )
+
+    # Get classification from LLM (with batching)
+    title_to_category = _classify_titles_with_llm_batched(
+        titles, progress_callback=progress_callback
+    )
+
+    t_post_llm = time.perf_counter()
+    logger.info(
+        "[TIMING] LLM classification complete",
+        elapsed_ms=round((t_post_llm - t_pre_llm) * 1000, 2),
+    )
 
     # Group employees by category
     clustered: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -116,18 +148,30 @@ def cluster_employees_by_role(
     # Ensure all categories exist in output (empty lists for unused categories)
     result = {cat: clustered.get(cat, []) for cat in ROLE_CATEGORIES}
 
+    t_end = time.perf_counter()
+
     # Log clustering summary
     summary = {cat: len(emps) for cat, emps in result.items() if emps}
-    logger.info("Clustered employees by role", summary=summary, total=len(employees))
+    logger.info(
+        "[TIMING] Clustering complete",
+        post_llm_grouping_ms=round((t_end - t_post_llm) * 1000, 2),
+        total_elapsed_ms=round((t_end - t_start) * 1000, 2),
+        summary=summary,
+        total=len(employees),
+    )
 
     return result
 
 
-def _classify_titles_with_llm(titles: List[str]) -> Dict[str, str]:
-    """Call LLM to classify job titles into categories.
+def _classify_titles_with_llm_batched(
+    titles: List[str],
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Dict[str, str]:
+    """Classify titles using batched LLM calls for better performance.
 
     Args:
         titles: List of unique job titles.
+        progress_callback: Optional callback for progress updates.
 
     Returns:
         Dict mapping each title to its category.
@@ -135,7 +179,73 @@ def _classify_titles_with_llm(titles: List[str]) -> Dict[str, str]:
     if not titles:
         return {}
 
-    # Build prompt
+    # Check cache for already-classified titles
+    cached = {t: _title_cache[t] for t in titles if t in _title_cache}
+    uncached = [t for t in titles if t not in _title_cache]
+
+    if not uncached:
+        logger.info(f"All {len(cached)} titles resolved from cache")
+        if progress_callback:
+            progress_callback(1, 1, len(cached), len(cached))
+        return cached
+
+    if cached:
+        logger.info(
+            f"{len(cached)} titles from cache, {len(uncached)} need LLM classification"
+        )
+
+    # Split uncached titles into batches
+    batches = [
+        uncached[i : i + LLM_BATCH_SIZE]
+        for i in range(0, len(uncached), LLM_BATCH_SIZE)
+    ]
+    total_batches = len(batches)
+
+    logger.info(
+        f"Processing {len(uncached)} titles in {total_batches} batches "
+        f"(batch_size={LLM_BATCH_SIZE})"
+    )
+
+    all_validated: Dict[str, str] = {}
+    titles_processed = 0
+
+    for batch_idx, batch in enumerate(batches, start=1):
+        t_batch_start = time.perf_counter()
+
+        batch_result = _classify_single_batch(batch)
+        all_validated.update(batch_result)
+
+        titles_processed += len(batch)
+        t_batch_end = time.perf_counter()
+
+        logger.info(
+            f"[TIMING] Batch {batch_idx}/{total_batches} complete",
+            batch_size=len(batch),
+            elapsed_ms=round((t_batch_end - t_batch_start) * 1000, 2),
+            titles_processed=titles_processed,
+            total_titles=len(uncached),
+        )
+
+        if progress_callback:
+            progress_callback(batch_idx, total_batches, titles_processed, len(uncached))
+
+    # Update cache with all new classifications
+    _title_cache.update(all_validated)
+
+    # Merge cached + newly classified
+    all_validated.update(cached)
+    return all_validated
+
+
+def _classify_single_batch(titles: List[str]) -> Dict[str, str]:
+    """Classify a single batch of titles via LLM.
+
+    Args:
+        titles: List of job titles (should be <= LLM_BATCH_SIZE).
+
+    Returns:
+        Dict mapping each title to its category.
+    """
     categories_str = ", ".join(ROLE_CATEGORIES)
     titles_str = "\n".join(f"- {t}" for t in titles)
     prompt = _CLASSIFICATION_PROMPT.format(categories=categories_str, titles=titles_str)

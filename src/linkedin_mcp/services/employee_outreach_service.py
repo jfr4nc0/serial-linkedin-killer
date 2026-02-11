@@ -4,7 +4,10 @@ import random
 import time
 from typing import Dict, List
 
+from loguru import logger
+
 from src.config.config_loader import load_config
+from src.config.trace_context import set_trace_id
 from src.linkedin_mcp.graphs.employee_search_graph import EmployeeSearchGraph
 from src.linkedin_mcp.graphs.message_send_graph import MessageSendGraph
 from src.linkedin_mcp.interfaces.services import IEmployeeOutreachService
@@ -18,7 +21,17 @@ from src.linkedin_mcp.services.browser_manager_service import (
     BrowserManagerService as BrowserManager,
 )
 from src.linkedin_mcp.services.linkedin_auth_service import LinkedInAuthService
-from src.linkedin_mcp.utils.logging_config import get_mcp_logger
+
+
+def _normalize_company_url(url: str) -> str:
+    """Extract company slug from LinkedIn URL for flexible matching.
+
+    Handles: "https://www.linkedin.com/company/acme/", "linkedin.com/company/acme", "acme"
+    """
+    url = url.strip().lower().rstrip("/")
+    if "/company/" in url:
+        return url.split("/company/")[-1].split("/")[0]
+    return url
 
 
 class EmployeeOutreachService(IEmployeeOutreachService):
@@ -88,6 +101,7 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         exclude_companies: List[str] = None,
         exclude_profile_urls: List[str] = None,
         batch_id: str = None,
+        trace_id: str = None,
     ) -> dict:
         """Search employees across multiple companies with a SINGLE browser session.
 
@@ -96,9 +110,16 @@ class EmployeeOutreachService(IEmployeeOutreachService):
             user_credentials: LinkedIn credentials
             total_limit: Optional max total employees across all companies.
                          When set, stops searching once this many employees are collected.
+            trace_id: Trace ID for distributed tracing (propagated from caller).
         """
-        logger = get_mcp_logger()
-        exclude_companies_set = set(exclude_companies or [])
+        # Set trace context for this request (auto-propagates to all logs)
+        if trace_id:
+            set_trace_id(trace_id)
+
+        # Normalize company URLs for flexible matching (handles trailing slashes, etc.)
+        exclude_companies_set = {
+            _normalize_company_url(url) for url in (exclude_companies or [])
+        }
         exclude_urls_set = set(exclude_profile_urls or [])
         try:
             self._ensure_authenticated(user_credentials)
@@ -106,9 +127,12 @@ class EmployeeOutreachService(IEmployeeOutreachService):
             results = []
             total_collected = 0
             for i, company in enumerate(companies):
-                # Skip excluded companies
-                if company["company_linkedin_url"] in exclude_companies_set:
-                    logger.info(f"Skipping excluded company: {company['company_name']}")
+                # Skip excluded companies (compare normalized slugs)
+                company_slug = _normalize_company_url(company["company_linkedin_url"])
+                if company_slug in exclude_companies_set:
+                    logger.info(
+                        f"Skipping excluded company: {company['company_name']} ({company_slug})"
+                    )
                     continue
                 # Check total limit before searching next company
                 if total_limit is not None and total_collected >= total_limit:
@@ -128,24 +152,15 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                     f"(limit: {company_limit})"
                 )
                 try:
+                    # Pass exclusions to graph so it skips them during extraction
+                    # (fills limit with non-excluded employees)
                     employees = self.employee_search_graph.execute(
                         company["company_linkedin_url"],
                         company["company_name"],
                         company_limit,
                         self.browser_manager,
+                        exclude_profile_urls=exclude_urls_set,
                     )
-                    # Filter out already-messaged employees
-                    if exclude_urls_set:
-                        before = len(employees)
-                        employees = [
-                            e
-                            for e in employees
-                            if e.get("profile_url", "") not in exclude_urls_set
-                        ]
-                        if before != len(employees):
-                            logger.info(
-                                f"Filtered {before - len(employees)} already-messaged employees from {company['company_name']}"
-                            )
                     total_collected += len(employees)
                     # Write to shared DB if session_factory available
                     if self._session_factory and batch_id and employees:
@@ -204,6 +219,22 @@ class EmployeeOutreachService(IEmployeeOutreachService):
             if self.browser_manager:
                 self.browser_manager.close_browser()
 
+    # Bounded thread pool for background searches (max 2 concurrent browser sessions)
+    _search_executor = None
+    _search_executor_lock = __import__("threading").Lock()
+
+    @classmethod
+    def _get_search_executor(cls):
+        if cls._search_executor is None:
+            with cls._search_executor_lock:
+                if cls._search_executor is None:
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    cls._search_executor = ThreadPoolExecutor(
+                        max_workers=2, thread_name_prefix="mcp-search"
+                    )
+        return cls._search_executor
+
     def submit_search_batch(
         self,
         companies: List[CompanySearchRequest],
@@ -214,19 +245,23 @@ class EmployeeOutreachService(IEmployeeOutreachService):
         exclude_companies: List[str] = None,
         exclude_profile_urls: List[str] = None,
     ) -> dict:
-        """Return batch_id immediately, run search in background thread.
+        """Return batch_id immediately, run search in bounded thread pool.
 
         When done, publishes MCPSearchComplete to Kafka.
         """
-        import threading
-
         from src.core.queue.config import TOPIC_MCP_SEARCH_COMPLETE
         from src.core.queue.producer import KafkaResultProducer
         from src.core.queue.schemas import MCPSearchComplete
 
-        logger = get_mcp_logger(trace_id or None)
+        # Set trace context for this request
+        if trace_id:
+            set_trace_id(trace_id)
 
         def _run():
+            # Re-set trace context in background thread (contextvars are thread-local)
+            if trace_id:
+                set_trace_id(trace_id)
+
             try:
                 summary = self.search_employees_batch(
                     companies,
@@ -235,6 +270,7 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                     exclude_companies=exclude_companies,
                     exclude_profile_urls=exclude_profile_urls,
                     batch_id=batch_id,
+                    trace_id=trace_id,
                 )
                 complete = MCPSearchComplete(
                     batch_id=batch_id,
@@ -260,47 +296,81 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                 f"Published MCPSearchComplete for batch {batch_id}: {complete.status}"
             )
 
-        threading.Thread(
-            target=_run, daemon=True, name=f"search-{batch_id[:8]}"
-        ).start()
-        logger.info(f"Submitted batch search {batch_id} to background thread")
+        self._get_search_executor().submit(_run)
+        logger.info(f"Submitted batch search {batch_id} to thread pool")
         return {"batch_id": batch_id}
 
-    def send_message(
+    def send_messages_batch(
         self,
-        employee_profile_url: str,
-        employee_name: str,
-        message: str,
+        messages: List[Dict[str, str]],
         user_credentials: Dict[str, str],
-    ) -> MessageResult:
-        """Send a message or connection request to an employee."""
+        trace_id: str = None,
+    ) -> List[MessageResult]:
+        """Send multiple messages using a SINGLE browser session.
+
+        Args:
+            messages: List of dicts with keys: profile_url, name, message, subject
+            user_credentials: LinkedIn credentials
+            trace_id: Trace ID for distributed tracing
+        """
+        if trace_id:
+            set_trace_id(trace_id)
+
+        results: List[MessageResult] = []
         try:
             self._ensure_authenticated(user_credentials)
 
-            result = self.message_send_graph.execute(
-                employee_profile_url,
-                employee_name,
-                message,
-                self.browser_manager,
-            )
+            for i, msg in enumerate(messages):
+                try:
+                    logger.info(
+                        f"Sending message {i + 1}/{len(messages)} to {msg.get('name', '')}",
+                    )
+                    result = self.message_send_graph.execute(
+                        msg["profile_url"],
+                        msg["name"],
+                        msg["message"],
+                        self.browser_manager,
+                        subject=msg.get("subject", ""),
+                    )
+                    results.append(result)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to send message to {msg.get('name', '')}: {e}"
+                    )
+                    results.append(
+                        MessageResult(
+                            employee_profile_url=msg.get("profile_url", ""),
+                            employee_name=msg.get("name", ""),
+                            sent=False,
+                            method="",
+                            error=str(e),
+                        )
+                    )
 
-            # Random delay between messages for anti-detection
-            delay = random.uniform(
-                self.config.outreach.delay_between_messages_min,
-                self.config.outreach.delay_between_messages_max,
-            )
-            time.sleep(delay)
+                # Anti-detection delay between messages
+                if i < len(messages) - 1:
+                    delay = random.uniform(
+                        self.config.outreach.delay_between_messages_min,
+                        self.config.outreach.delay_between_messages_max,
+                    )
+                    time.sleep(delay)
 
-            return result
+            return results
 
         except Exception as e:
-            return MessageResult(
-                employee_profile_url=employee_profile_url,
-                employee_name=employee_name,
-                sent=False,
-                method="",
-                error=str(e),
-            )
+            logger.error(f"Batch message sending failed: {e}")
+            while len(results) < len(messages):
+                msg = messages[len(results)]
+                results.append(
+                    MessageResult(
+                        employee_profile_url=msg.get("profile_url", ""),
+                        employee_name=msg.get("name", ""),
+                        sent=False,
+                        method="",
+                        error=str(e),
+                    )
+                )
+            return results
 
         finally:
             if self.browser_manager:

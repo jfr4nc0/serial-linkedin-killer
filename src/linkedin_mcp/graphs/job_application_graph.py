@@ -2,14 +2,15 @@ import uuid
 from typing import Any, List, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
+from loguru import logger
 
+from src.config.trace_context import get_trace_id, set_trace_id
 from src.linkedin_mcp.interfaces.agents import IJobApplicationAgent
 from src.linkedin_mcp.interfaces.services import IBrowserManager
 from src.linkedin_mcp.model.types import ApplicationRequest, CVAnalysis
 from src.linkedin_mcp.observability.langfuse_config import (
     get_langfuse_config_for_mcp_langgraph,
 )
-from src.linkedin_mcp.utils.logging_config import get_mcp_logger
 
 
 class JobApplicationState(TypedDict):
@@ -61,7 +62,6 @@ class JobApplicationGraph:
         workflow.add_edge("record_result", "select_next_application")
 
         # Compile the graph - Langfuse observability is handled during invoke
-        logger = get_mcp_logger("graph-compilation")
         logger.info(
             "JobApplicationGraph compiled - observability handled during invoke"
         )
@@ -69,12 +69,10 @@ class JobApplicationGraph:
 
     def _initialize_agent(self, state: JobApplicationState) -> JobApplicationState:
         """Initialize the job application agent."""
-        trace_id = state.get("trace_id", str(uuid.uuid4()))
-        logger = get_mcp_logger(trace_id)
+        trace_id = get_trace_id()
 
         logger.info(
             "Initializing job application agent",
-            trace_id=trace_id,
             applications_count=len(state.get("applications", [])),
         )
 
@@ -90,8 +88,6 @@ class JobApplicationGraph:
         self, state: JobApplicationState
     ) -> JobApplicationState:
         """Select the next application to process."""
-        trace_id = state.get("trace_id", "unknown")
-        logger = get_mcp_logger(trace_id)
         current_index = state["current_application_index"]
         total_applications = len(state["applications"])
 
@@ -99,7 +95,6 @@ class JobApplicationGraph:
             current_application = state["applications"][current_index]
             logger.info(
                 "Selected next application to process",
-                trace_id=trace_id,
                 current_index=current_index,
                 total_applications=total_applications,
                 job_id=current_application.get("job_id", "unknown"),
@@ -108,7 +103,6 @@ class JobApplicationGraph:
         else:
             logger.info(
                 "No more applications to process",
-                trace_id=trace_id,
                 processed_count=current_index,
                 total_applications=total_applications,
             )
@@ -116,15 +110,12 @@ class JobApplicationGraph:
 
     def _process_application(self, state: JobApplicationState) -> JobApplicationState:
         """Process a single job application using the EasyApply agent."""
-        trace_id = state.get("trace_id", "unknown")
-        logger = get_mcp_logger(trace_id)
         current_app = state["current_application"]
         job_id = current_app.get("job_id", "unknown")
 
         try:
             logger.info(
                 "Starting job application processing",
-                trace_id=trace_id,
                 job_id=job_id,
                 monthly_salary=current_app.get("monthly_salary", 0),
             )
@@ -138,7 +129,6 @@ class JobApplicationGraph:
 
             logger.info(
                 "Job application processing completed",
-                trace_id=trace_id,
                 job_id=job_id,
                 success=result.get("success", False),
                 result_keys=(
@@ -154,7 +144,6 @@ class JobApplicationGraph:
         except Exception as e:
             logger.error(
                 "Job application processing failed",
-                trace_id=trace_id,
                 job_id=job_id,
                 error=str(e),
                 error_type=type(e).__name__,
@@ -193,14 +182,14 @@ class JobApplicationGraph:
         trace_id: str = None,
     ) -> List[dict]:
         """Execute the job application workflow with pre-authenticated browser."""
-        # Generate trace_id if not provided
-        if not trace_id:
-            trace_id = str(uuid.uuid4())
+        # Set trace context (or generate new if not provided)
+        if trace_id:
+            set_trace_id(trace_id)
+        else:
+            trace_id = set_trace_id()
 
-        logger = get_mcp_logger(trace_id)
         logger.info(
             "Executing job application graph",
-            trace_id=trace_id,
             applications_count=len(applications),
         )
 
@@ -220,7 +209,6 @@ class JobApplicationGraph:
 
         logger.info(
             "Job application graph execution completed",
-            trace_id=trace_id,
             results_count=len(result.get("application_results", [])),
             errors_count=len(result.get("errors", [])),
         )

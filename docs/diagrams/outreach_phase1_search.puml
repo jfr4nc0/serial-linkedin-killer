@@ -4,20 +4,22 @@ autonumber
 
 box "CLI Layer" #LightBlue
     participant "CLI\nclient.py" as CLI
+    participant "KafkaResult\nConsumer" as CLICONSUMER
 end box
 
 box "Core Agent API" #LightGreen
     participant "FastAPI\nController" as CTRL
     participant "OutreachService" as SVC
+    participant "Background\nThread" as THREAD
     participant "EmployeeOutreach\nAgent" as AGENT
     participant "SessionStore" as SESS
     participant "AgentDB" as DB
     participant "CompanyDB" as CDB
+    participant "KafkaResult\nProducer" as PRODUCER
 end box
 
 box "MCP Client" #LightYellow
     participant "LinkedInMCP\nClientSync" as SYNC
-    participant "LinkedInMCP\nClient (Async)" as ASYNC
 end box
 
 box "LinkedIn MCP Server" #LightCoral
@@ -28,6 +30,10 @@ box "LinkedIn MCP Server" #LightCoral
     participant "SearchGraph" as SEARCH
 end box
 
+database "SharedDB\n(SearchResult)" as SHAREDDB #Orange
+
+queue "Kafka" as KAFKA #Plum
+
 == Request Initiation ==
 
 CLI -> CTRL: POST /api/outreach/search
@@ -36,195 +42,262 @@ note right of CLI
     - filters: {industry, country, size}
     - credentials: {email, password}
     - total_limit: int (optional)
+    - company_limit: int (optional)
+    - segment: "b2c" | "b2b" (optional)
 end note
 
 activate CTRL
-CTRL -> SVC: search_and_cluster(request)
+CTRL -> SVC: submit_search(request)
 activate SVC
 
-== Company Filtering ==
+SVC -> SVC: task_id = uuid()
+SVC -> THREAD: submit to ThreadPoolExecutor\n_run_search(task_id, request)
+note over THREAD: Bounded pool (max_workers=4)
 
-SVC -> SVC: trace_id = uuid()
-SVC -> CDB: filter_companies(filters)
-activate CDB
-note right of CDB
-    SELECT * FROM companies
-    WHERE industry IN (...)
-    AND country IN (...)
-    AND size IN (...)
-end note
-CDB --> SVC: [company dicts]
-deactivate CDB
+SVC --> CTRL: task_id
+deactivate SVC
 
-alt No companies match
-    SVC --> CTRL: OutreachSearchResponse(empty)
-    CTRL --> CLI: {session_id: "", role_groups: {}}
-end
+CTRL --> CLI: {task_id}
+deactivate CTRL
 
-== Agent Search Phase ==
+== Parallel Execution ==
 
-SVC -> AGENT: EmployeeOutreachAgent(agent_db)
-SVC -> AGENT: run_search_only(companies, credentials, total_limit)
-activate AGENT
+par Background Thread Execution
+    activate THREAD #LightBlue
 
-AGENT -> AGENT: Initialize OutreachAgentState
-AGENT -> AGENT: Invoke _search_graph
+    == Company Filtering ==
 
-== Build Exclusion List ==
+    THREAD -> THREAD: trace_id = uuid()
+    THREAD -> CDB: filter_companies(filters)
+    activate CDB
+    note right of CDB
+        SELECT * FROM companies
+        WHERE industry IN (...)
+        AND country IN (...)
+        AND size IN (...)
+    end note
+    CDB --> THREAD: [company dicts]
+    deactivate CDB
 
-AGENT -> DB: get_messaged_profile_urls()
-activate DB
-note right of DB
-    SELECT employee_profile_url
-    FROM messages_sent
-    WHERE success = 1
-end note
-DB --> AGENT: {messaged_urls}
-deactivate DB
+    THREAD -> THREAD: Apply company_limit
 
-== MCP Batch Search ==
-
-AGENT -> AGENT: Build companies_to_search list
-AGENT -> SYNC: search_employees_batch(\ncompanies, exclude_profile_urls)
-activate SYNC
-
-SYNC -> SYNC: _get_loop() - get/create event loop
-SYNC -> ASYNC: run_coroutine_threadsafe()
-activate ASYNC
-
-ASYNC -> ASYNC: async with client context
-ASYNC -> TOOLS: HTTP POST /mcp\ncall_tool("search_employees_batch")
-activate TOOLS
-
-TOOLS -> EOS: search_employees_batch(\ncompanies, credentials,\nexclude_companies, exclude_profile_urls)
-activate EOS
-
-== Browser Authentication ==
-
-EOS -> BM: start_browser()
-activate BM
-BM -> BM: Initialize Selenium WebDriver
-BM --> EOS: driver ready
-deactivate BM
-
-EOS -> EOS: _ensure_authenticated()
-EOS -> AUTH: LinkedInAuthGraph.execute()
-activate AUTH
-
-AUTH -> AUTH: navigate_to_login\n(/login)
-AUTH -> AUTH: fill_credentials\n(email, password)
-AUTH -> AUTH: submit_login
-AUTH -> AUTH: verify_authentication
-
-alt CAPTCHA detected
-    AUTH -> AUTH: handle_captcha()\nWait for user input
-end
-
-AUTH --> EOS: AuthState{authenticated: true}
-deactivate AUTH
-
-== Employee Search Loop ==
-
-loop For each company in batch
-    EOS -> EOS: Check exclude_companies_set
-    alt Company excluded
-        EOS -> EOS: Skip to next
+    alt No companies match
+        THREAD -> PRODUCER: publish(OutreachSearchResponse(empty))
+        THREAD -> THREAD: return
     end
 
-    EOS -> EOS: Check total_limit
-    alt Limit reached
-        EOS -> EOS: Break loop
+    == Agent Search Phase ==
+
+    THREAD -> AGENT: run_search_only(companies, credentials, total_limit)
+    activate AGENT
+
+    AGENT -> AGENT: Initialize OutreachAgentState
+    AGENT -> AGENT: Invoke _search_graph
+
+    == Build Exclusion List ==
+
+    AGENT -> DB: get_messaged_profile_urls()
+    activate DB
+    note right of DB
+        SELECT employee_profile_url
+        FROM messages_sent
+        WHERE success = 1
+    end note
+    DB --> AGENT: {messaged_urls}
+    deactivate DB
+
+    == MCP Batch Search (Async via Kafka) ==
+
+    AGENT -> AGENT: batch_id = uuid()
+    AGENT -> SYNC: search_employees_batch(\ncompanies, credentials,\nexclude_companies,\nexclude_profile_urls,\nbatch_id)
+    activate SYNC
+
+    SYNC -> TOOLS: HTTP POST /mcp\ncall_tool("search_employees_batch")
+    activate TOOLS
+
+    TOOLS -> EOS: submit_search_batch(\ncompanies, credentials, batch_id)
+    activate EOS
+    note right of EOS
+        Returns batch_id immediately.
+        Search runs in background
+        ThreadPoolExecutor (max_workers=2).
+    end note
+    EOS --> TOOLS: {batch_id}
+    deactivate EOS
+
+    TOOLS --> SYNC: {batch_id}
+    deactivate TOOLS
+
+    SYNC --> AGENT: {batch_id}
+    deactivate SYNC
+
+    == MCP Background Search ==
+
+    activate EOS #LightCoral
+    note over EOS: Background thread executing
+
+    EOS -> BM: start_browser()
+    activate BM
+    BM -> BM: Initialize Selenium WebDriver
+    BM --> EOS: driver ready
+    deactivate BM
+
+    EOS -> EOS: _ensure_authenticated()
+    EOS -> AUTH: LinkedInAuthGraph.execute()
+    activate AUTH
+    AUTH -> AUTH: navigate_to_login, fill_credentials
+    AUTH -> AUTH: submit_login, verify_auth
+    AUTH --> EOS: AuthState{authenticated: true}
+    deactivate AUTH
+
+    loop For each company in batch
+        EOS -> EOS: Check exclude_companies_set
+        EOS -> EOS: Check total_limit
+
+        EOS -> SEARCH: EmployeeSearchGraph.execute(\ncompany_url, company_name, limit)
+        activate SEARCH
+        SEARCH -> SEARCH: navigate_to_people()
+        loop Extract employees
+            SEARCH -> SEARCH: extract_employees() - Parse DOM
+            SEARCH -> SEARCH: load_more() if needed
+        end
+        SEARCH --> EOS: [EmployeeResult]
+        deactivate SEARCH
+
+        EOS -> EOS: Filter exclude_profile_urls
+        EOS -> SHAREDDB: INSERT SearchResult rows\n(batch_id, company, employee data)
+        note right of SHAREDDB
+            Per-company writes to shared
+            SQLite DB keyed by batch_id
+        end note
+        EOS -> EOS: random_delay(0.5, 1)
     end
 
-    EOS -> SEARCH: EmployeeSearchGraph.execute(\ncompany_url, company_name, limit)
-    activate SEARCH
+    EOS -> BM: close_browser()
 
-    SEARCH -> SEARCH: navigate_to_people()\nGo to /company/name/people/
+    EOS -> KAFKA: publish MCPSearchComplete\n(batch_id, status, total_employees)
+    note right of KAFKA
+        Topic: mcp-search-complete
+        Key: batch_id
+    end note
 
-    loop Extract employees
-        SEARCH -> SEARCH: extract_employees()\nParse DOM cards
-        SEARCH -> SEARCH: should_load_more()?
+    deactivate EOS
 
-        alt More results & limit not reached
-            SEARCH -> SEARCH: load_more()\nClick "Show more"
-        else
-            SEARCH -> SEARCH: Finish
+    == Agent Consumes Completion ==
+
+    AGENT -> KAFKA: consume(mcp-search-complete,\nbatch_id, timeout=3600)
+    note right of AGENT
+        KafkaResultConsumer with
+        ephemeral group_id
+    end note
+
+    KAFKA --> AGENT: MCPSearchComplete\n{status, total_employees}
+
+    alt MCP search failed
+        AGENT -> AGENT: raise Exception
+    end
+
+    == Read Results from Shared DB ==
+
+    AGENT -> SHAREDDB: get_search_results(batch_id)
+    SHAREDDB --> AGENT: [SearchResult rows]
+
+    AGENT -> SHAREDDB: delete_search_results(batch_id)
+    note right: Cleanup after reading
+
+    AGENT -> AGENT: Flatten results\nAdd company_name to each employee
+    AGENT --> THREAD: employees_found
+    deactivate AGENT
+
+    == LLM Role Clustering ==
+
+    THREAD -> THREAD: cluster_employees_by_role(employees)
+    note right of THREAD
+        LLM classifies titles into 18 categories:
+        B2B: Broker_Exchange_HeadOfProduct,
+          WealthManager_PortfolioManager,
+          Fintech_ProductManager, FamilyOffice_CIO,
+          Insurance_HeadOfProduct,
+          Corporate_Treasurer_CFO,
+          Boutique_FundManager
+        B2C: Engineering, Finance,
+          Investment Banking / M&A,
+          Strategy Consulting, Crypto / Web3
+        General: Sales, Marketing, HR/People,
+          Operations, Executive, Other
+
+        Uses in-memory _title_cache to
+        skip already-classified titles.
+    end note
+
+    == Segment Filtering ==
+
+    alt segment == "b2c" or "b2b"
+        THREAD -> THREAD: filter_by_segment(clustered, segment)
+        THREAD -> THREAD: Apply total_limit after filtering
+    end
+
+    == Session Storage ==
+
+    THREAD -> SESS: create(clustered, trace_id)
+    activate SESS
+    note right of SESS
+        Stores only clustered dict
+        (no duplicate employees list)
+    end note
+    SESS -> DB: save_session(session_id, data, ttl=3600)
+    SESS -> SESS: _maybe_cleanup()\n(every 5 min, not every call)
+    SESS --> THREAD: session_id
+    deactivate SESS
+
+    == Publish Results to Kafka ==
+
+    THREAD -> PRODUCER: publish(\nTOPIC_OUTREACH_SEARCH_RESULTS,\ntask_id, response)
+    activate PRODUCER
+    PRODUCER -> PRODUCER: produce(topic, key=task_id, value=json)
+    PRODUCER -> PRODUCER: flush()
+    note right of PRODUCER
+        Topic: outreach-search-results
+        Key: task_id
+        Value: OutreachSearchResponse JSON
+    end note
+    PRODUCER --> THREAD: delivery confirmed
+    deactivate PRODUCER
+
+    deactivate THREAD
+
+else CLI Kafka Consumer
+    CLI -> CLICONSUMER: consume(outreach-search-results,\ntask_id, OutreachSearchResponse)
+    activate CLICONSUMER
+    note right of CLICONSUMER
+        Ephemeral consumer group_id
+        (unique per invocation)
+    end note
+
+    loop Poll until timeout
+        CLICONSUMER -> CLICONSUMER: poll(timeout=5.0)
+        alt Key matches task_id
+            CLICONSUMER --> CLI: OutreachSearchResponse
         end
     end
 
-    SEARCH --> EOS: [EmployeeResult]\n{name, title, profile_url}
-    deactivate SEARCH
+    CLICONSUMER -> CLICONSUMER: close()
+    deactivate CLICONSUMER
 
-    EOS -> EOS: Filter exclude_profile_urls
-    EOS -> EOS: total_collected += len(filtered)
-    EOS -> EOS: random_delay(0.5, 1) - anti-detection
+    == Display Results ==
+
+    CLI -> CLI: Display role_groups table
+    note right of CLI
+        OutreachSearchResponse:
+        - session_id: uuid
+        - role_groups: {role -> [employees]}
+        - total_employees: int
+        - companies_processed: int
+        - trace_id: uuid
+    end note
+
+    CLI -> CLI: User selects roles
+    CLI -> CLI: User enters message templates
 end
-
-EOS -> BM: close_browser()
-
-EOS --> TOOLS: BatchEmployeeSearchResult[]
-deactivate EOS
-
-TOOLS --> ASYNC: JSON response
-deactivate TOOLS
-
-ASYNC -> ASYNC: json.loads(content)
-ASYNC --> SYNC: batch_results
-deactivate ASYNC
-
-SYNC --> AGENT: batch_results
-deactivate SYNC
-
-== Flatten & Cluster ==
-
-AGENT -> AGENT: Flatten results\nAdd company_name to each employee
-AGENT --> SVC: employees_found
-deactivate AGENT
-
-SVC -> DB: Safety net filter\nwas_already_messaged() for each
-SVC -> SVC: cluster_employees_by_role(employees)
-note right of SVC
-    Uses LLM to classify titles:
-    Engineering, Sales, Marketing,
-    Finance, HR, Operations,
-    Executive, Other
-end note
-
-== Session Storage ==
-
-SVC -> SESS: create(employees, clustered, companies, trace_id)
-activate SESS
-
-SESS -> DB: save_session(session_id, data, ttl=3600)
-activate DB
-note right of DB
-    INSERT INTO sessions
-    (session_id, data, created_at, expires_at)
-end note
-DB --> SESS: OK
-deactivate DB
-
-SESS -> DB: cleanup_expired_sessions()
-SESS --> SVC: session_id
-deactivate SESS
-
-== Response ==
-
-SVC --> CTRL: OutreachSearchResponse
-deactivate SVC
-note right of SVC
-    - session_id: uuid
-    - role_groups: {role -> [employees]}
-    - total_employees: int
-    - companies_processed: int
-    - trace_id: uuid
-end note
-
-CTRL --> CLI: JSON response
-deactivate CTRL
-
-CLI -> CLI: Display role_groups table
-CLI -> CLI: User selects roles
-CLI -> CLI: User enters message templates
 
 @enduml

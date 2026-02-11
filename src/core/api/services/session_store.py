@@ -1,11 +1,16 @@
 """Session storage backed by SQLite via AgentDB."""
 
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from src.core.db.agent_db import AgentDB
+
+# Periodic cleanup: at most once every 5 minutes
+_last_cleanup: float = 0.0
+_CLEANUP_INTERVAL = 300.0
 
 
 class SessionStore:
@@ -17,30 +22,35 @@ class SessionStore:
 
     def create(
         self,
-        employees: List[Dict],
         clustered: Dict[str, List[Dict]],
-        companies: List[Dict],
         trace_id: str = "",
     ) -> str:
         session_id = str(uuid.uuid4())
 
+        # Only store clustered (employees can be reconstructed from it)
         data = {
-            "employees": employees,
             "clustered": clustered,
-            "companies": companies,
             "trace_id": trace_id,
         }
 
         self._db.save_session(session_id, data, ttl=self._ttl)
-        self._db.cleanup_expired_sessions()
+        self._maybe_cleanup()
 
+        total = sum(len(v) for v in clustered.values())
         logger.debug(
             "Session created",
             session_id=session_id,
-            employees=len(employees),
-            companies=len(companies),
+            employees=total,
         )
         return session_id
+
+    def _maybe_cleanup(self) -> None:
+        """Run cleanup at most once per interval to avoid O(n^2) scans."""
+        global _last_cleanup
+        now = time.time()
+        if now - _last_cleanup > _CLEANUP_INTERVAL:
+            _last_cleanup = now
+            self._db.cleanup_expired_sessions()
 
     def get(self, session_id: str) -> Optional[Dict[str, Any]]:
         data = self._db.get_session(session_id)
@@ -59,5 +69,4 @@ class SessionStore:
         self._db.cleanup_expired_sessions()
 
     def count(self) -> int:
-        # Not critical — return 0 as approximate
         return 0

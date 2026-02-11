@@ -10,19 +10,37 @@ participant "LinkedInMCP\nClientSync" as MCP_CLIENT
 participant "LinkedIn MCP\nServer" as MCP_SERVER
 participant "Browser\nGraphs" as GRAPHS
 participant "AgentDB" as DB
+participant "SharedDB\n(SearchResult)" as SHARED_DB
 participant "SessionStore" as SESS
 participant "Kafka" as KAFKA
 
-== PHASE 1: SEARCH & CLUSTER (Synchronous) ==
+== PHASE 1: SEARCH & CLUSTER (Async via Kafka) ==
 
-CLI -> CTRL: POST /api/outreach/search\n{filters, credentials, total_limit}
+CLI -> CTRL: POST /api/outreach/search\n{filters, credentials, total_limit,\ncompany_limit, segment}
 activate CTRL
 
-CTRL -> SVC: search_and_cluster(request)
+CTRL -> SVC: submit_search(request)
 activate SVC
+
+SVC -> SVC: Generate task_id
+SVC -> SVC: Spawn thread: _run_search()
+SVC --> CTRL: task_id
+deactivate SVC
+
+CTRL --> CLI: {task_id}
+deactivate CTRL
+
+CLI -> KAFKA: consume(outreach-search-results,\ntask_id, timeout=3600s)
+activate CLI #LightGreen
+note over CLI: CLI polls Kafka\nfor search results
+
+activate SVC #LightBlue
+note over SVC: Background Thread
 
 SVC -> DB: CompanyDB.filter_companies(filters)
 DB --> SVC: [company dicts]
+
+SVC -> SVC: Apply company_limit slice
 
 SVC -> AGENT: run_search_only(companies, credentials)
 activate AGENT
@@ -30,11 +48,25 @@ activate AGENT
 AGENT -> DB: get_messaged_profile_urls()
 DB --> AGENT: {messaged URLs}
 
-AGENT -> MCP_CLIENT: search_employees_batch(\ncompanies, exclude_profile_urls)
+AGENT -> AGENT: Generate batch_id
+
+AGENT -> MCP_CLIENT: search_employees_batch(\ncompanies, batch_id, exclude_profile_urls)
 activate MCP_CLIENT
 
 MCP_CLIENT -> MCP_SERVER: HTTP POST /mcp\ncall_tool("search_employees_batch")
 activate MCP_SERVER
+
+MCP_SERVER -> MCP_SERVER: submit_search_batch()\nSpawn background thread
+MCP_SERVER --> MCP_CLIENT: {"batch_id": "uuid"}
+deactivate MCP_SERVER
+
+MCP_CLIENT --> AGENT: {"batch_id": "uuid"}
+deactivate MCP_CLIENT
+
+note over AGENT: Agent now waits\nfor Kafka completion
+
+activate MCP_SERVER #LightCoral
+note over MCP_SERVER: Background Thread
 
 MCP_SERVER -> MCP_SERVER: _ensure_authenticated()
 MCP_SERVER -> GRAPHS: LinkedInAuthGraph.execute()
@@ -44,14 +76,20 @@ loop For each company
     MCP_SERVER -> GRAPHS: EmployeeSearchGraph.execute()
     GRAPHS --> MCP_SERVER: [employees]
     MCP_SERVER -> MCP_SERVER: Filter exclude_profile_urls
+    MCP_SERVER -> SHARED_DB: INSERT SearchResult rows\n(batch_id, company, employees)
 end
 
 MCP_SERVER -> MCP_SERVER: close_browser()
-MCP_SERVER --> MCP_CLIENT: BatchEmployeeSearchResult[]
+MCP_SERVER -> KAFKA: publish(mcp-search-complete,\nbatch_id, MCPSearchComplete)
 deactivate MCP_SERVER
 
-MCP_CLIENT --> AGENT: batch_results
-deactivate MCP_CLIENT
+AGENT -> KAFKA: consume(mcp-search-complete,\nbatch_id, timeout=3600s)
+KAFKA --> AGENT: MCPSearchComplete\n{status, total_employees, companies_processed}
+
+AGENT -> SHARED_DB: get_search_results(batch_id)
+SHARED_DB --> AGENT: [employee dicts]
+
+AGENT -> SHARED_DB: delete_search_results(batch_id)
 
 AGENT -> AGENT: Flatten results, add company_name
 AGENT --> SVC: employees_found
@@ -60,15 +98,20 @@ deactivate AGENT
 SVC -> DB: Filter already-messaged (safety net)
 SVC -> SVC: cluster_employees_by_role(employees)
 
+alt Segment filter requested
+    SVC -> SVC: filter_by_segment(clustered, segment)
+    SVC -> SVC: Apply total_limit after filtering
+end
+
 SVC -> SESS: create(employees, clustered, companies)
 SESS -> DB: save_session(session_id, data, ttl=3600)
 SESS --> SVC: session_id
 
-SVC --> CTRL: OutreachSearchResponse\n{session_id, role_groups, total_employees}
+SVC -> KAFKA: publish(outreach-search-results,\ntask_id, OutreachSearchResponse)
 deactivate SVC
 
-CTRL --> CLI: JSON response
-deactivate CTRL
+KAFKA --> CLI: OutreachSearchResponse\n{session_id, role_groups, total_employees}
+deactivate CLI
 
 CLI -> CLI: Display role_groups\nUser selects roles & templates
 
@@ -148,12 +191,12 @@ AGENT --> SVC: {message_results, messages_sent_today}
 deactivate AGENT
 
 SVC -> SVC: Build results_by_role
-SVC -> KAFKA: publish(TOPIC_OUTREACH_RESULTS,\ntask_id, OutreachSendResponse)
+SVC -> KAFKA: publish(outreach-results,\ntask_id, OutreachSendResponse)
 
 deactivate SVC
 
 par CLI Kafka Consumer
-    CLI -> KAFKA: consume(task_id, timeout=600s)
+    CLI -> KAFKA: consume(outreach-results,\ntask_id, timeout=600s)
     activate KAFKA
 
     loop Poll for task_id

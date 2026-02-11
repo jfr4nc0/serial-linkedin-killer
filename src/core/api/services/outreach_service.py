@@ -1,7 +1,6 @@
 """Service layer for the employee outreach workflow."""
 
 import atexit
-import gc
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -9,6 +8,7 @@ from typing import Optional
 from loguru import logger
 
 from src.config.config_loader import load_config
+from src.config.trace_context import set_trace_id, trace_context
 from src.core.agents.tools.company_db import CompanyDB
 from src.core.agents.tools.role_clustering import cluster_employees_by_role
 from src.core.api.schemas.outreach_schemas import (
@@ -51,6 +51,15 @@ def _shutdown_executor():
 atexit.register(_shutdown_executor)
 
 
+def _log_future_exception(future):
+    """Callback to log uncaught exceptions from thread pool futures."""
+    exc = future.exception()
+    if exc:
+        logger.exception(
+            "Background task failed with uncaught exception", error=str(exc)
+        )
+
+
 class OutreachService:
     """Orchestrates the outreach agent and publishes results to Kafka."""
 
@@ -78,19 +87,22 @@ class OutreachService:
     def submit_search(self, request: OutreachSearchRequest) -> str:
         """Phase 1: Submit search & cluster. Returns task_id, results via Kafka."""
         task_id = str(uuid.uuid4())
-        _get_executor().submit(self._run_search, task_id, request)
+        future = _get_executor().submit(self._run_search, task_id, request)
+        future.add_done_callback(_log_future_exception)
         return task_id
 
     def _run_search(self, task_id: str, request: OutreachSearchRequest) -> None:
         """Execute search & cluster and publish results to Kafka."""
+        import time
+
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
-        agent = None
+        # Set trace context for this entire request (auto-propagates to all logs)
+        trace_id = set_trace_id()
+
         try:
-            trace_id = str(uuid.uuid4())
-            logger.info(
-                "Starting search and cluster", task_id=task_id, trace_id=trace_id
-            )
+            t_start = time.perf_counter()
+            logger.info("Starting search and cluster", task_id=task_id)
 
             # Filter companies from DB
             with CompanyDB(self._config.db.company_url) as db:
@@ -130,21 +142,29 @@ class OutreachService:
                 exclude_profile_urls=request.exclude_profile_urls,
             )
 
-            del agent
-            agent = None
-            gc.collect()
+            t_pre_cluster = time.perf_counter()
+            logger.info(
+                "[TIMING] Pre-clustering",
+                elapsed_ms=round((t_pre_cluster - t_start) * 1000, 2),
+                employees_count=len(employees),
+            )
 
-            # Safety net: filter out any already-messaged employees (batch query)
-            db = get_agent_db()
-            messaged_urls = db.get_messaged_profile_urls()
-            employees = [
-                emp
-                for emp in employees
-                if emp.get("profile_url", "") not in messaged_urls
-            ]
+            # Cluster employees by role using LLM (with progress logging)
+            def log_progress(batch: int, total: int, processed: int, total_titles: int):
+                logger.info(
+                    f"[PROGRESS] LLM clustering: batch {batch}/{total}, "
+                    f"{processed}/{total_titles} titles classified"
+                )
 
-            # Cluster employees by role using LLM
-            clustered = cluster_employees_by_role(employees)
+            clustered = cluster_employees_by_role(
+                employees, progress_callback=log_progress
+            )
+
+            t_post_cluster = time.perf_counter()
+            logger.info(
+                "[TIMING] Post-clustering",
+                elapsed_ms=round((t_post_cluster - t_pre_cluster) * 1000, 2),
+            )
 
             # Filter by B2C/B2B segment if requested
             if request.segment:
@@ -162,29 +182,38 @@ class OutreachService:
                         for k, v in clustered.items()
                     }
 
-            # Store in session for Phase 2
+            # Store only clustered in session (no duplicate employees list)
+            t_pre_session = time.perf_counter()
             session_id = self._session_store.create(
-                employees=employees,
                 clustered=clustered,
-                companies=companies,
                 trace_id=trace_id,
+            )
+            t_post_session = time.perf_counter()
+            logger.info(
+                "[TIMING] Session created",
+                elapsed_ms=round((t_post_session - t_pre_session) * 1000, 2),
             )
 
             logger.info(
                 "Search and cluster complete",
                 task_id=task_id,
-                trace_id=trace_id,
                 session_id=session_id,
                 total_employees=len(employees),
                 companies=len(companies),
             )
 
+            t_pre_response = time.perf_counter()
             response = OutreachSearchResponse(
                 session_id=session_id,
                 role_groups=clustered,
                 total_employees=len(employees),
                 companies_processed=len(companies),
                 trace_id=trace_id,
+            )
+            t_post_response = time.perf_counter()
+            logger.info(
+                "[TIMING] Response object created",
+                elapsed_ms=round((t_post_response - t_pre_response) * 1000, 2),
             )
 
         except Exception as e:
@@ -196,13 +225,23 @@ class OutreachService:
                 companies_processed=0,
                 trace_id="",
             )
-        finally:
-            if agent is not None:
-                del agent
-                gc.collect()
+            t_post_response = time.perf_counter()
 
+        t_pre_publish = time.perf_counter()
         self._producer.publish(TOPIC_OUTREACH_SEARCH_RESULTS, task_id, response)
+        t_post_publish = time.perf_counter()
+        logger.info(
+            "[TIMING] Kafka publish (before flush)",
+            elapsed_ms=round((t_post_publish - t_pre_publish) * 1000, 2),
+        )
+
         self._producer.flush()
+        t_post_flush = time.perf_counter()
+        logger.info(
+            "[TIMING] Kafka flush complete",
+            elapsed_ms=round((t_post_flush - t_post_publish) * 1000, 2),
+            total_elapsed_ms=round((t_post_flush - t_start) * 1000, 2),
+        )
 
     # === Phase 2: Send Messages ===
 
@@ -216,7 +255,8 @@ class OutreachService:
         task_id = str(uuid.uuid4())
 
         # Submit to thread pool instead of creating unbounded daemon threads
-        _get_executor().submit(self._run_send, task_id, request, session)
+        future = _get_executor().submit(self._run_send, task_id, request, session)
+        future.add_done_callback(_log_future_exception)
 
         # Delete session after use (data is passed to thread)
         self._session_store.delete(request.session_id)
@@ -232,14 +272,38 @@ class OutreachService:
         """Execute the send phase and publish results to Kafka."""
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
-        agent = None
+        # Restore trace context from session (propagated from search phase)
+        trace_id = session.get("trace_id") or set_trace_id()
+        set_trace_id(trace_id)
+
         try:
-            trace_id = session.get("trace_id", str(uuid.uuid4()))
             logger.info("Starting send phase", task_id=task_id, trace_id=trace_id)
 
             # Build list of employees with their templates attached
             employees_with_templates = []
             clustered = session["clustered"]
+
+            # Apply role reassignments from client (fixes LLM misclassifications)
+            if request.reassignments:
+                for profile_url, new_role in request.reassignments.items():
+                    # Find and move the employee
+                    for old_role, emps in list(clustered.items()):
+                        for emp in emps:
+                            if emp.get("profile_url") == profile_url:
+                                emps.remove(emp)
+                                if new_role not in clustered:
+                                    clustered[new_role] = []
+                                clustered[new_role].append(emp)
+                                logger.info(
+                                    "Reassigned employee",
+                                    name=emp.get("name"),
+                                    old_role=old_role,
+                                    new_role=new_role,
+                                )
+                                break
+                        else:
+                            continue
+                        break
 
             for role, config in request.selected_groups.items():
                 if not config.enabled:
@@ -255,6 +319,20 @@ class OutreachService:
                             "_role": role,
                         }
                     )
+
+            # Filter to selected employees if specified
+            if request.selected_employees:
+                selected_set = set(request.selected_employees)
+                before_count = len(employees_with_templates)
+                employees_with_templates = [
+                    emp
+                    for emp in employees_with_templates
+                    if emp.get("profile_url") in selected_set
+                ]
+                logger.info(
+                    f"Filtered to {len(employees_with_templates)} selected employees "
+                    f"(from {before_count})"
+                )
 
             if not employees_with_templates:
                 response = OutreachSendResponse(
@@ -281,6 +359,7 @@ class OutreachService:
                 employees_with_templates=employees_with_templates,
                 user_credentials=request.credentials.model_dump(),
                 daily_limit=daily_limit,
+                max_per_company=request.max_per_company,
                 trace_id=trace_id,
             )
 
@@ -316,9 +395,6 @@ class OutreachService:
                 errors=[str(e)],
                 trace_id="",
             )
-        finally:
-            del agent
-            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)
 
@@ -328,8 +404,8 @@ class OutreachService:
         """Legacy: Submit a single-phase outreach workflow. Returns task_id immediately."""
         task_id = str(uuid.uuid4())
 
-        # Submit to thread pool instead of creating unbounded daemon threads
-        _get_executor().submit(self._run, task_id, request)
+        future = _get_executor().submit(self._run, task_id, request)
+        future.add_done_callback(_log_future_exception)
 
         return task_id
 
@@ -337,7 +413,6 @@ class OutreachService:
         """Execute the legacy single-phase outreach agent and publish results."""
         from src.core.agents.outreach_agent import EmployeeOutreachAgent
 
-        agent = None
         try:
             logger.info("Starting outreach workflow", task_id=task_id)
 
@@ -393,8 +468,5 @@ class OutreachService:
                 errors=[str(e)],
                 trace_id="",
             )
-        finally:
-            del agent
-            gc.collect()
 
         self._producer.publish(TOPIC_OUTREACH_RESULTS, task_id, response)

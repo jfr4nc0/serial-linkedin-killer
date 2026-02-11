@@ -23,7 +23,6 @@ from webdriver_manager.core.os_manager import ChromeType
 from webdriver_manager.firefox import GeckoDriverManager
 
 from src.linkedin_mcp.interfaces.services import IBrowserManager
-from src.linkedin_mcp.utils.logging_config import get_mcp_logger
 from src.linkedin_mcp.utils.user_agent_rotator import user_agent_rotator
 
 
