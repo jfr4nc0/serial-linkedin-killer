@@ -13,7 +13,7 @@ This milestone integrates Gemini as a configurable LLM provider to unblock role 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Dependency Setup** - Add langchain-google-genai library ✓ (2026-02-11)
-- [ ] **Phase 2: Provider Configuration & Client Factory** - Config-driven LLM provider selection with working client factory
+- [x] **Phase 2: Provider Configuration & Client Factory** - Config-driven LLM provider selection with working client factory ✓ (2026-02-11)
 - [ ] **Phase 3: Integration & Validation** - Role clustering works with Gemini and tracing is operational
 
 ## Phase Details
@@ -46,7 +46,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 02-01-PLAN.md — Config schema extension, provider factory, and env var documentation
+- [x] 02-01-PLAN.md — Config schema extension, provider factory, and env var documentation ✓
 
 ### Phase 3: Integration & Validation
 **Goal**: Role clustering uses Gemini when configured with full observability
@@ -70,5 +70,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Dependency Setup | 1/1 | ✓ Complete | 2026-02-11 |
-| 2. Provider Configuration & Client Factory | 0/1 | Not started | - |
+| 2. Provider Configuration & Client Factory | 1/1 | ✓ Complete | 2026-02-11 |
 | 3. Integration & Validation | 0/TBD | Not started | - |

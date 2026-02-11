@@ -7,28 +7,28 @@
 
 ### Provider Configuration
 
-- [ ] **PROV-01**: User can select LLM provider ("local" or "gemini") via `config/agent.yaml` under `llm.provider`
-- [ ] **PROV-02**: User can override LLM provider via `LLM_PROVIDER` environment variable
-- [ ] **PROV-03**: User can configure Gemini model name via `llm.gemini_model` config (default: `gemini-3-flash-preview`)
-- [ ] **PROV-04**: User can set Gemini API key via `GEMINI_API_KEY` environment variable
+- [x] **PROV-01**: User can select LLM provider ("local" or "gemini") via `config/agent.yaml` under `llm.provider`
+- [x] **PROV-02**: User can override LLM provider via `LLM_PROVIDER` environment variable
+- [x] **PROV-03**: User can configure Gemini model name via `llm.gemini_model` config (default: `gemini-3-flash-preview`)
+- [x] **PROV-04**: User can set Gemini API key via `GEMINI_API_KEY` environment variable
 
 ### LLM Client
 
-- [ ] **LLM-01**: `get_llm_client()` returns a LangChain `BaseChatModel` configured for the selected provider
-- [ ] **LLM-02**: Gemini client uses `langchain-google-genai` `ChatGoogleGenerativeAI` with configured model and API key
-- [ ] **LLM-03**: Local LLM client continues to work unchanged when `provider=local` (backward compatible)
-- [ ] **LLM-04**: LLM client caching works for both providers (separate cache keys per provider)
+- [x] **LLM-01**: `get_llm_client()` returns a LangChain `BaseChatModel` configured for the selected provider
+- [x] **LLM-02**: Gemini client uses `langchain-google-genai` `ChatGoogleGenerativeAI` with configured model and API key
+- [x] **LLM-03**: Local LLM client continues to work unchanged when `provider=local` (backward compatible)
+- [x] **LLM-04**: LLM client caching works for both providers (separate cache keys per provider)
 
 ### Dependency & Integration
 
-- [ ] **DEP-01**: `langchain-google-genai` added as Poetry dependency
+- [x] **DEP-01**: `langchain-google-genai` added as Poetry dependency
 - [ ] **INT-01**: Role clustering (`cluster_employees_by_role`) works with Gemini provider without code changes to `role_clustering.py`
 - [ ] **INT-02**: Langfuse tracing works with Gemini provider (LangChain callback compatibility)
 
 ### Configuration Files
 
-- [ ] **CFG-01**: `config/agent.yaml` updated with new `llm.provider` and `llm.gemini_model` fields with documented defaults
-- [ ] **CFG-02**: `.env.example` updated with `GEMINI_API_KEY` and `LLM_PROVIDER` entries
+- [x] **CFG-01**: `config/agent.yaml` updated with new `llm.provider` and `llm.gemini_model` fields with documented defaults
+- [x] **CFG-02**: `.env.example` updated with `GEMINI_API_KEY` and `LLM_PROVIDER` entries
 
 ## v2 Requirements
 
@@ -52,16 +52,16 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DEP-01 | Phase 1 | Complete |
-| PROV-01 | Phase 2 | Pending |
-| PROV-02 | Phase 2 | Pending |
-| PROV-03 | Phase 2 | Pending |
-| PROV-04 | Phase 2 | Pending |
-| LLM-01 | Phase 2 | Pending |
-| LLM-02 | Phase 2 | Pending |
-| LLM-03 | Phase 2 | Pending |
-| LLM-04 | Phase 2 | Pending |
-| CFG-01 | Phase 2 | Pending |
-| CFG-02 | Phase 2 | Pending |
+| PROV-01 | Phase 2 | Complete |
+| PROV-02 | Phase 2 | Complete |
+| PROV-03 | Phase 2 | Complete |
+| PROV-04 | Phase 2 | Complete |
+| LLM-01 | Phase 2 | Complete |
+| LLM-02 | Phase 2 | Complete |
+| LLM-03 | Phase 2 | Complete |
+| LLM-04 | Phase 2 | Complete |
+| CFG-01 | Phase 2 | Complete |
+| CFG-02 | Phase 2 | Complete |
 | INT-01 | Phase 3 | Pending |
 | INT-02 | Phase 3 | Pending |
 
@@ -72,4 +72,4 @@
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after Phase 1 completion*
+*Last updated: 2026-02-11 after Phase 2 completion*
