@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 2026-02-11)
 
-**Core value:** Role clustering must process large employee datasets without stalling — Gemini unblocks this bottleneck
-**Current focus:** v2.1 milestone complete — planning next milestone
+**Core value:** The outreach pipeline must handle large employee datasets without crashing — RAM guardrails prevent OOM kills
+**Current focus:** v2.2 RAM Safety Caps — defining requirements
 
 ## Current Position
 
-Phase: 3 of 3 (Integration & Validation)
-Plan: 1 of 1 in current phase
-Status: Milestone v2.1 complete
-Last activity: 2026-02-11 — Milestone v2.1 Gemini LLM Integration shipped
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-11 — Milestone v2.2 started
 
-Progress: [██████████] 100% (3/3 plans)
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -47,6 +47,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-11T18:30:00Z (milestone completion)
-Stopped at: Milestone v2.1 complete. Next: /gsd:new-milestone
+Last session: 2026-02-11 (milestone v2.2 started)
+Stopped at: Defining requirements for v2.2 RAM Safety Caps
 Resume file: None

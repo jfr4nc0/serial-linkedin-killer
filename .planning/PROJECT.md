@@ -30,7 +30,16 @@ Role clustering must process large employee datasets (thousands of employees acr
 
 ### Active
 
-(None — define with `/gsd:new-milestone`)
+## Current Milestone: v2.2 RAM Safety Caps
+
+**Goal:** Add memory guardrails so the outreach pipeline never crashes from unbounded RAM consumption — graceful degradation instead of OOM kills.
+
+**Target features:**
+- Bounded caches with eviction (LRU for `_title_cache`, prune `_instances`)
+- Streaming/chunked DB queries (replace `.all()` with pagination/yield)
+- Memory monitoring with circuit breakers (psutil-based, configurable thresholds)
+- Remove dangerous `company_loader.py` pandas path
+- Limit concurrent data in LangGraph state (avoid O(n^2) list copies)
 
 ### Out of Scope
 
@@ -68,4 +77,4 @@ Role clustering must process large employee datasets (thousands of employees acr
 | LLM_PROVIDER checked at call-time | Config is cached globally; checking at call-time enables runtime switching | ✓ Good — env var changes take effect immediately |
 
 ---
-*Last updated: 2026-02-11 after v2.1 milestone*
+*Last updated: 2026-02-11 after v2.2 milestone start*
