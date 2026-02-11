@@ -7,6 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 from src.config.config_loader import load_config
+from src.core.observability.langfuse_config import get_langfuse_callback
 
 _llm_cache: dict[str, BaseChatModel] = {}
 
@@ -54,6 +55,13 @@ def get_llm_client() -> BaseChatModel:
             f"Unknown LLM provider: '{provider}'. Must be 'local' or 'gemini'. "
             f"Set via LLM_PROVIDER env var or llm.provider in config/agent.yaml."
         )
+
+    # Pre-bind Langfuse callbacks for automatic tracing
+    langfuse_handler = get_langfuse_callback()
+    if langfuse_handler is not None:
+        langfuse_handler.metadata = langfuse_handler.metadata or {}
+        langfuse_handler.metadata["provider"] = provider
+        client = client.with_config({"callbacks": [langfuse_handler]})
 
     # Cache and return
     _llm_cache[provider] = client
