@@ -4,19 +4,11 @@ import os
 import tempfile
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 from src.config.config_loader import AgentConfig, load_config
-from src.core.tools.company_db import CompanyDB
-from src.core.tools.company_loader import (
-    filter_companies,
-    get_unique_values,
-    load_companies,
-)
-from src.core.tools.message_template import render_template
-
-# --- Company Loader Tests ---
+from src.core.agents.tools.company_db import CompanyDB
+from src.core.agents.tools.message_template import render_template
 
 
 @pytest.fixture
@@ -32,76 +24,6 @@ germany,2008,mno345,software,linkedin.com/company/devhaus,berlin,devhaus ag,berl
     csv_file = tmp_path / "test_companies.csv"
     csv_file.write_text(csv_content)
     return str(csv_file)
-
-
-def test_load_companies(sample_csv):
-    df = load_companies(sample_csv)
-    assert len(df) == 5
-    assert list(df.columns) == [
-        "country",
-        "founded",
-        "id",
-        "industry",
-        "linkedin_url",
-        "locality",
-        "name",
-        "region",
-        "size",
-        "website",
-    ]
-
-
-def test_get_unique_values(sample_csv):
-    df = load_companies(sample_csv)
-
-    countries = get_unique_values(df, "country")
-    assert "germany" in countries
-    assert "united states" in countries
-    assert "romania" in countries
-    assert len(countries) == 3
-
-    industries = get_unique_values(df, "industry")
-    assert "software" in industries
-    assert "automotive" in industries
-    assert len(industries) == 3
-
-
-def test_filter_by_country(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"country": ["germany"]})
-    assert len(filtered) == 2
-    assert all(filtered["country"] == "germany")
-
-
-def test_filter_by_industry(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"industry": ["software"]})
-    assert len(filtered) == 3
-
-
-def test_filter_by_multiple_columns(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(
-        df,
-        {
-            "country": ["germany"],
-            "industry": ["software"],
-        },
-    )
-    assert len(filtered) == 1
-    assert filtered.iloc[0]["name"] == "devhaus ag"
-
-
-def test_filter_empty_values_means_all(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"country": []})
-    assert len(filtered) == 5
-
-
-def test_filter_case_insensitive(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"country": ["GERMANY"]})
-    assert len(filtered) == 2
 
 
 # --- Message Template Tests ---
@@ -191,7 +113,7 @@ linkedin:
 @pytest.fixture
 def company_db(sample_csv):
     """Create a CompanyDB with in-memory SQLite imported from sample CSV."""
-    db = CompanyDB(":memory:")
+    db = CompanyDB("sqlite:///:memory:")
     db.import_csv(sample_csv)
     yield db
     db.close()
