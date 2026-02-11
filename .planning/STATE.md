@@ -11,17 +11,17 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 
 Phase: 6 of 7 (State Optimization)
 Plan: 2 of 2 in current phase
-Status: Plan 06-02 complete (06-01 pending)
-Last activity: 2026-02-11 — Completed 06-02-PLAN.md (Duplicate Employee List Elimination)
+Status: Phase complete
+Last activity: 2026-02-11 — Completed 06-01-PLAN.md (LangGraph Annotated Reducers)
 
-Progress: [██████░░░░] 60% (6/7 total plans completed, 06-01 pending)
+Progress: [███████░░░] 70% (7/10 estimated total plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
+- Total plans completed: 7
 - Average duration: 2.8 min
-- Total execution time: 0.30 hours
+- Total execution time: 0.33 hours
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: [██████░░░░] 60% (6/7 total plans completed, 06-01
 | 03 | 1 | 165s | 165s |
 | 04 | 1 | 207s | 207s |
 | 05 | 1 | 280s | 280s |
-| 06 | 1 | 180s | 180s |
+| 06 | 2 | 389s | 195s |
 
 **Recent Trend:**
-- Last 3 plans: 207s, 280s, 180s
+- Last 3 plans: 280s, 180s, 209s
 - Trend: Stable (3-5 min per plan)
 
 *Updated after each plan completion*
@@ -56,6 +56,8 @@ Recent decisions affecting current work:
 - [Phase 05-01]: CompanyDB.filter_companies still returns List[dict] (not generator) to preserve consumer compatibility with len(), slicing, and truthiness checks
 - [Phase 05-01]: AgentDB.get_search_results changed to Iterator[dict] since consumer only iterates with for-loop
 - [Phase 05-01]: Default chunk_size of 500 balances memory efficiency with query overhead
+- [Phase 06-01]: extracted_urls (set) left unchanged -- mutated in-place via .add(), no copy problem
+- [Phase 06-01]: total_found (plain int) still computed with state addition since it has no reducer
 - [Phase 06-02]: Two del-points in outreach_service: after clustering and after segment filtering (both create new employees lists)
 - [Phase 06-02]: Build result dict before del all_employees so list reference transfers to LangGraph state
 
@@ -70,5 +72,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 06-02-PLAN.md (Duplicate Employee List Elimination - eager del of intermediate lists)
+Stopped at: Completed 06-01-PLAN.md (LangGraph Annotated Reducers - delta-dict returns for O(n^2) elimination)
 Resume file: None
