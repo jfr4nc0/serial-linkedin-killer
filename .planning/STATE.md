@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** The outreach pipeline must handle large employee datasets without crashing — RAM guardrails prevent OOM kills
-**Current focus:** Phase 4 - Quick Wins
+**Current focus:** Phase 5 - Streaming Queries
 
 ## Current Position
 
-Phase: 4 of 7 (Quick Wins)
+Phase: 5 of 7 (Streaming Queries)
 Plan: 1 of 1 in current phase
 Status: Phase complete
-Last activity: 2026-02-11 — Completed 04-01-PLAN.md (RAM Safety Caps)
+Last activity: 2026-02-11 — Completed 05-01-PLAN.md (Streaming Queries with yield_per)
 
-Progress: [████░░░░░░] 40% (4/10 estimated total plans)
+Progress: [█████░░░░░] 50% (5/10 estimated total plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 2.6 min
-- Total execution time: 0.19 hours
+- Total plans completed: 5
+- Average duration: 2.9 min
+- Total execution time: 0.27 hours
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [████░░░░░░] 40% (4/10 estimated total plans)
 | 02 | 1 | 153s | 153s |
 | 03 | 1 | 165s | 165s |
 | 04 | 1 | 207s | 207s |
+| 05 | 1 | 280s | 280s |
 
 **Recent Trend:**
-- Last 3 plans: 153s, 165s, 207s
-- Trend: Stable (2-3.5 min per plan)
+- Last 3 plans: 165s, 207s, 280s
+- Trend: Stable (2.5-5 min per plan)
 
 *Updated after each plan completion*
 
@@ -51,6 +52,9 @@ Recent decisions affecting current work:
 - [Phase 04-01]: Used OrderedDict-based BoundedLRUCache instead of functools.lru_cache to support batch dict updates
 - [Phase 04-01]: Default cache size of 10,000 titles balances memory usage (~1MB) with hit rate
 - [Phase 04-01]: Automatic pruning of dead weakrefs prevents gradual memory leak in browser instance tracking
+- [Phase 05-01]: CompanyDB.filter_companies still returns List[dict] (not generator) to preserve consumer compatibility with len(), slicing, and truthiness checks
+- [Phase 05-01]: AgentDB.get_search_results changed to Iterator[dict] since consumer only iterates with for-loop
+- [Phase 05-01]: Default chunk_size of 500 balances memory efficiency with query overhead
 
 ### Pending Todos
 
@@ -63,5 +67,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 04-01-PLAN.md (RAM Safety Caps - bounded caches and weakref pruning)
+Stopped at: Completed 05-01-PLAN.md (Streaming Queries with yield_per - chunked iteration for memory safety)
 Resume file: None
