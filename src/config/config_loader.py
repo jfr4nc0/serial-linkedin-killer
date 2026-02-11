@@ -15,6 +15,7 @@ class LLMConfig(BaseModel):
     max_tokens: int = 2000
     provider: str = "local"        # "local" or "gemini"
     gemini_model: str = "gemini-3-flash-preview"
+    title_cache_max_size: int = 10000
 
 
 class MCPServerConfig(BaseModel):

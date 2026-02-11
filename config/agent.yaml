@@ -5,6 +5,7 @@ llm:
   max_tokens: 2000
   provider: "gemini" # Options: "local" (default), "gemini". Override with LLM_PROVIDER env var
   gemini_model: "gemini-3-flash-preview" # Used when provider=gemini
+  title_cache_max_size: 10000
 
 mcp_server:
   host: "localhost"
