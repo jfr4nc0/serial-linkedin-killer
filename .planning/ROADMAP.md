@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 4: Quick Wins** — Bounded caches and dead code removal (completed 2026-02-11)
 - [x] **Phase 5: Streaming Queries** — Paginated DB access replaces `.all()` (completed 2026-02-11)
-- [ ] **Phase 6: State Optimization** — Memory-efficient LangGraph data flow
+- [x] **Phase 6: State Optimization** — Memory-efficient LangGraph data flow (completed 2026-02-11)
 - [ ] **Phase 7: Memory Monitoring** — RAM usage tracking with circuit breakers
 
 ---
@@ -79,8 +79,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — LangGraph Annotated reducers for employee and job search graphs (STATE-01, STATE-02)
-- [ ] 06-02-PLAN.md — Memory deduplication in outreach service and agent (DEDUP-01, DEDUP-02)
+- [x] 06-01-PLAN.md — LangGraph Annotated reducers for employee and job search graphs (STATE-01, STATE-02) — completed 2026-02-11
+- [x] 06-02-PLAN.md — Memory deduplication in outreach service and agent (DEDUP-01, DEDUP-02) — completed 2026-02-11
 
 ---
 
@@ -112,5 +112,5 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 3. Integration & Validation | v2.1 | 1/1 | ✓ Complete | 2026-02-11 |
 | 4. Quick Wins | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
 | 5. Streaming Queries | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
-| 6. State Optimization | v2.2 | 0/2 | Not started | — |
+| 6. State Optimization | v2.2 | 2/2 | ✓ Complete | 2026-02-11 |
 | 7. Memory Monitoring | v2.2 | 0/TBD | Not started | — |

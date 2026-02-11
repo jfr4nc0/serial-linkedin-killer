@@ -26,13 +26,13 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ### LangGraph State Optimization
 
-- [ ] **STATE-01**: `EmployeeSearchGraph` pagination loop does not create O(n^2) intermediate list copies
-- [ ] **STATE-02**: `JobSearchGraph` pagination loop does not create O(n^2) intermediate list copies
+- [x] **STATE-01**: `EmployeeSearchGraph` pagination loop does not create O(n^2) intermediate list copies
+- [x] **STATE-02**: `JobSearchGraph` pagination loop does not create O(n^2) intermediate list copies
 
 ### Data Duplication Reduction
 
-- [ ] **DEDUP-01**: Clustered employee data does not exist as 3+ simultaneous in-memory copies in `outreach_service.py`
-- [ ] **DEDUP-02**: Intermediate employee lists in `outreach_agent.py` are cleared after consumption
+- [x] **DEDUP-01**: Clustered employee data does not exist as 3+ simultaneous in-memory copies in `outreach_service.py`
+- [x] **DEDUP-02**: Intermediate employee lists in `outreach_agent.py` are cleared after consumption
 
 ## Future Requirements
 
@@ -60,10 +60,10 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 | QUERY-03 | Phase 4 | Complete |
 | QUERY-01 | Phase 5 | Complete |
 | QUERY-02 | Phase 5 | Complete |
-| STATE-01 | Phase 6 | Pending |
-| STATE-02 | Phase 6 | Pending |
-| DEDUP-01 | Phase 6 | Pending |
-| DEDUP-02 | Phase 6 | Pending |
+| STATE-01 | Phase 6 | Complete |
+| STATE-02 | Phase 6 | Complete |
+| DEDUP-01 | Phase 6 | Complete |
+| DEDUP-02 | Phase 6 | Complete |
 | MON-01 | Phase 7 | Pending |
 | MON-02 | Phase 7 | Pending |
 | MON-03 | Phase 7 | Pending |
@@ -75,4 +75,4 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after Phase 5 completion*
+*Last updated: 2026-02-11 after Phase 6 completion*
