@@ -26,10 +26,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. `langchain-google-genai` package is installed via Poetry
   2. `ChatGoogleGenerativeAI` can be imported without errors
   3. Poetry lock file includes the new dependency with correct version constraints
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 01-01: [Plan not yet created]
+- [ ] 01-01-PLAN.md — Add langchain-google-genai v2.1.12 and verify imports
 
 ### Phase 2: Provider Configuration & Client Factory
 **Goal**: LLM provider is configurable and client factory returns correct provider instances
@@ -69,6 +69,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Dependency Setup | 0/TBD | Not started | - |
+| 1. Dependency Setup | 0/1 | Not started | - |
 | 2. Provider Configuration & Client Factory | 0/TBD | Not started | - |
 | 3. Integration & Validation | 0/TBD | Not started | - |
