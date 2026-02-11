@@ -13,6 +13,8 @@ class LLMConfig(BaseModel):
     api_key: str = "not-needed"
     temperature: float = 0.1
     max_tokens: int = 2000
+    provider: str = "local"        # "local" or "gemini"
+    gemini_model: str = "gemini-3-flash-preview"
 
 
 class MCPServerConfig(BaseModel):

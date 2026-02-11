@@ -3,6 +3,8 @@ llm:
   api_key: "not-needed"
   temperature: 0.1
   max_tokens: 2000
+  provider: "local"              # Options: "local" (default), "gemini". Override with LLM_PROVIDER env var
+  gemini_model: "gemini-3-flash-preview"  # Used when provider=gemini
 
 mcp_server:
   host: "localhost"
