@@ -43,10 +43,10 @@ Plans:
   5. `get_llm_client()` returns `ChatGoogleGenerativeAI` instance when provider is "gemini" with configured API key and model
   6. LLM client caching works for both providers with separate cache keys preventing cross-provider pollution
   7. `.env.example` documents `GEMINI_API_KEY` and `LLM_PROVIDER` with usage examples
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 02-01: [Plan not yet created]
+- [ ] 02-01-PLAN.md — Config schema extension, provider factory, and env var documentation
 
 ### Phase 3: Integration & Validation
 **Goal**: Role clustering uses Gemini when configured with full observability
@@ -70,5 +70,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Dependency Setup | 1/1 | ✓ Complete | 2026-02-11 |
-| 2. Provider Configuration & Client Factory | 0/TBD | Not started | - |
+| 2. Provider Configuration & Client Factory | 0/1 | Not started | - |
 | 3. Integration & Validation | 0/TBD | Not started | - |
