@@ -78,6 +78,10 @@ class ObservabilityConfig(BaseModel):
     log_level: str = "INFO"
 
 
+class MemoryConfig(BaseModel):
+    threshold_percent: float = 80.0
+
+
 class AgentConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     mcp_server: MCPServerConfig = MCPServerConfig()
@@ -89,6 +93,7 @@ class AgentConfig(BaseModel):
     api: APIConfig = APIConfig()
     db: DBConfig = DBConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
+    memory: MemoryConfig = MemoryConfig()
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "agent.yaml"
@@ -129,6 +134,7 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
         "db.url": os.getenv("DATABASE_URL"),
         "db.company_url": os.getenv("COMPANY_DATABASE_URL"),
         "observability.log_level": os.getenv("LOG_LEVEL"),
+        "memory.threshold_percent": os.getenv("MEMORY_THRESHOLD_PERCENT"),
     }
 
     for dotted_key, value in env_overrides.items():

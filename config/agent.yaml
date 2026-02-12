@@ -53,3 +53,6 @@ db:
 observability:
   langfuse_enabled: false
   log_level: "INFO"
+
+memory:
+  threshold_percent: 80.0  # Circuit breaker triggers when RAM usage exceeds this %

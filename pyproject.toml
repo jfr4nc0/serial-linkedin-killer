@@ -46,6 +46,7 @@ basedpyright = "^1.37.2"
 sqlalchemy = "^2.0.0"
 alembic = "^1.13.0"
 langchain-google-genai = "~2.1.12"
+psutil = "^7.2.2"
 
 
 [tool.poetry.group.dev.dependencies]
