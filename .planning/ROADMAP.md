@@ -63,6 +63,12 @@ Plans:
 
 **Requirements:** CAMP-01, CAMP-02, CAMP-03, CAMP-04, CAMP-05, CAMP-06
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md -- Campaign schemas and service (CRUD + status lifecycle)
+- [ ] 09-02-PLAN.md -- Campaign REST API controller and app registration
+
 **Success Criteria:**
 
 1. User can create a campaign with a base message, selected sentiments, and optional schedule via POST endpoint, and the campaign starts in "draft" status
@@ -152,7 +158,7 @@ Plans:
 | 6. State Optimization | v2.2 | 2/2 | Complete | 2026-02-11 |
 | 7. Memory Monitoring | v2.2 | 1/1 | Complete | 2026-02-12 |
 | 8. API Foundation & Authentication | v3.0 | 2/2 | Complete | 2026-02-12 |
-| 9. Campaign Management | v3.0 | 0/? | Not Started | -- |
+| 9. Campaign Management | v3.0 | 0/2 | Not Started | -- |
 | 10. Content Generation | v3.0 | 0/? | Not Started | -- |
 | 11. LinkedIn Publishing | v3.0 | 0/? | Not Started | -- |
 | 12. Metrics & Analytics | v3.0 | 0/? | Not Started | -- |
