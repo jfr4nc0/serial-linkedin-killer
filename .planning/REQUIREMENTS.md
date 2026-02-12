@@ -9,11 +9,11 @@ Requirements for Content Campaign Intelligence milestone. Each maps to roadmap p
 
 ### Authentication
 
-- [ ] **AUTH-01**: User can configure LinkedIn API credentials (client_id, client_secret) via config file or environment variables
-- [ ] **AUTH-02**: User can authenticate via OAuth2 authorization code flow and receive access token stored in database
-- [ ] **AUTH-03**: System tracks token expiration (60-day lifecycle) and alerts user 7 days before expiry
-- [ ] **AUTH-04**: System detects expired/invalid tokens (401 responses), pauses affected campaigns, and notifies user with re-auth link
-- [ ] **AUTH-05**: OAuth2 authentication context is fully separated from existing RPA browser session authentication
+- [x] **AUTH-01**: User can configure LinkedIn API credentials (client_id, client_secret) via config file or environment variables
+- [x] **AUTH-02**: User can authenticate via OAuth2 authorization code flow and receive access token stored in database
+- [x] **AUTH-03**: System tracks token expiration (60-day lifecycle) and alerts user 7 days before expiry
+- [x] **AUTH-04**: System detects expired/invalid tokens (401 responses), pauses affected campaigns, and notifies user with re-auth link
+- [x] **AUTH-05**: OAuth2 authentication context is fully separated from existing RPA browser session authentication
 
 ### Campaign Management
 
@@ -66,10 +66,10 @@ Requirements for Content Campaign Intelligence milestone. Each maps to roadmap p
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Database schema extended with 5 new tables via Alembic migration (campaigns, campaign_variants, campaign_metrics, campaign_leads, linkedin_oauth_tokens)
-- [ ] **INFRA-02**: Two new Kafka topics configured (campaign-publish-results, campaign-metrics-updates)
-- [ ] **INFRA-03**: LinkedIn API client uses Community Management API with Posts API endpoint and versioned headers
-- [ ] **INFRA-04**: Campaign configuration section added to agent.yaml (default sentiments, max variants, poll interval, LinkedIn API credentials)
+- [x] **INFRA-01**: Database schema extended with 5 new tables via Alembic migration (campaigns, campaign_variants, campaign_metrics, campaign_leads, linkedin_oauth_tokens)
+- [x] **INFRA-02**: Two new Kafka topics configured (campaign-publish-results, campaign-metrics-updates)
+- [x] **INFRA-03**: LinkedIn API client uses Community Management API with Posts API endpoint and versioned headers
+- [x] **INFRA-04**: Campaign configuration section added to agent.yaml (default sentiments, max variants, poll interval, LinkedIn API credentials)
 
 ## Future Requirements
 
@@ -115,11 +115,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 8 | Pending |
-| AUTH-02 | Phase 8 | Pending |
-| AUTH-03 | Phase 8 | Pending |
-| AUTH-04 | Phase 8 | Pending |
-| AUTH-05 | Phase 8 | Pending |
+| AUTH-01 | Phase 8 | Complete |
+| AUTH-02 | Phase 8 | Complete |
+| AUTH-03 | Phase 8 | Complete |
+| AUTH-04 | Phase 8 | Complete |
+| AUTH-05 | Phase 8 | Complete |
 | CAMP-01 | Phase 9 | Pending |
 | CAMP-02 | Phase 9 | Pending |
 | CAMP-03 | Phase 9 | Pending |
@@ -151,10 +151,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INTEL-02 | Phase 13 | Pending |
 | INTEL-03 | Phase 13 | Pending |
 | INTEL-04 | Phase 13 | Pending |
-| INFRA-01 | Phase 8 | Pending |
-| INFRA-02 | Phase 8 | Pending |
-| INFRA-03 | Phase 8 | Pending |
-| INFRA-04 | Phase 8 | Pending |
+| INFRA-01 | Phase 8 | Complete |
+| INFRA-02 | Phase 8 | Complete |
+| INFRA-03 | Phase 8 | Complete |
+| INFRA-04 | Phase 8 | Complete |
 
 **Coverage:**
 - v3.0 requirements: 40 total
