@@ -6,9 +6,11 @@ from fastapi import FastAPI
 from loguru import logger
 
 from src.config.config_loader import load_config
+from src.core.api.controllers.campaign_controller import router as campaign_router
 from src.core.api.controllers.job_controller import router as job_router
 from src.core.api.controllers.oauth_controller import router as oauth_router
 from src.core.api.controllers.outreach_controller import router as outreach_router
+from src.core.api.services.campaign_service import CampaignService
 from src.core.api.services.job_service import JobService
 from src.core.api.services.outreach_service import OutreachService
 from src.core.api.services.session_store import SessionStore
@@ -20,6 +22,7 @@ _agent_db: AgentDB | None = None
 _session_store: SessionStore | None = None
 _job_service: JobService | None = None
 _outreach_service: OutreachService | None = None
+_campaign_service: CampaignService | None = None
 
 
 def get_agent_db() -> AgentDB:
@@ -28,7 +31,7 @@ def get_agent_db() -> AgentDB:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _producer, _agent_db, _session_store, _job_service, _outreach_service
+    global _producer, _agent_db, _session_store, _job_service, _outreach_service, _campaign_service
 
     from src.core.utils.logging_config import configure_core_agent_logging
 
@@ -59,6 +62,7 @@ async def lifespan(app: FastAPI):
     _session_store = SessionStore(agent_db=_agent_db, ttl=3600)
     _job_service = JobService(_producer)
     _outreach_service = OutreachService(_producer, _session_store)
+    _campaign_service = CampaignService(_agent_db._engine)
 
     yield
 
@@ -81,6 +85,10 @@ def get_outreach_service() -> OutreachService:
     return _outreach_service
 
 
+def get_campaign_service() -> CampaignService:
+    return _campaign_service
+
+
 app = FastAPI(
     title="Serial Job Applier API",
     description="Core agent API for job application and outreach workflows",
@@ -90,6 +98,7 @@ app = FastAPI(
 app.include_router(job_router)
 app.include_router(outreach_router)
 app.include_router(oauth_router)
+app.include_router(campaign_router)
 
 
 @app.get("/health")
