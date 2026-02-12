@@ -1,8 +1,8 @@
 """Request/response schemas for campaign management endpoints."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # Request schemas
@@ -84,3 +84,30 @@ class CampaignDeleteResponse(BaseModel):
     id: str
     status: str = "deleted"
     deleted_at: float
+
+
+class GenerateVariantsRequest(BaseModel):
+    """Request to generate content for campaign variants."""
+    custom_prompts: Optional[Dict[str, str]] = None  # Optional dict mapping sentiment name to custom prompt
+
+
+class GenerateVariantsResponse(BaseModel):
+    """Response after generating variant content."""
+    campaign_id: str
+    variants_generated: int
+    diversity: dict  # Contains passed (bool), min_diversity (float), failing_pairs (list), pair_count (int)
+    variants: List[dict]  # Each with id, sentiment, content_snippet
+
+
+class VariantEditRequest(BaseModel):
+    """Request to edit a variant's content."""
+    content: str = Field(min_length=1)  # Must be non-empty
+
+
+class VariantEditResponse(BaseModel):
+    """Response after editing a variant."""
+    id: str
+    campaign_id: str
+    sentiment: str
+    content: str
+    is_selected: int
