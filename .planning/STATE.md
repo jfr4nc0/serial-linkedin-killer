@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-12)
 ## Current Position
 
 Phase: 10 - Content Generation
-Plan: 1/2
+Plan: 2/2
 Status: In Progress
-Last activity: 2026-02-12 -- Completed Phase 10 Plan 01 (Content Generation Service)
+Last activity: 2026-02-12 -- Completed Phase 10 Plan 02 (Content Controller)
 
-Progress: [████▌.....] 42% (2.5/6 v3.0 phases complete)
+Progress: [█████.....] 50% (3.0/6 v3.0 phases complete)
 
 ## Performance Metrics
 
 **Velocity (v2.1 + v2.2 + v3.0):**
-- Total plans completed: 13
-- Average duration: 2.8 min
-- Total execution time: 0.61 hours
+- Total plans completed: 14
+- Average duration: 2.9 min
+- Total execution time: 0.66 hours
 
 **By Phase:**
 
@@ -36,7 +36,7 @@ Progress: [████▌.....] 42% (2.5/6 v3.0 phases complete)
 | 07 | 1 | 234s | 234s |
 | 08 | 2 | 517s | 259s |
 | 09 | 2 | 250s | 125s |
-| 10 | 1 | 158s | 158s |
+| 10 | 2 | 340s | 170s |
 
 *Updated after each plan completion*
 
@@ -86,6 +86,12 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - LLM prompt includes 1300 character limit for LinkedIn post constraints
 - Custom sentiment prompts supported alongside 10 presets
 
+**Phase 10 Plan 2 decisions:**
+- Generation endpoint accepts optional custom_prompts for flexibility
+- Edit endpoint validates both variant_id and campaign_id for security
+- ContentGenerationService initialized in app lifespan with shared DB engine
+- Error handling follows established pattern: ValueError with "not found" -> 404, other ValueError -> 400
+
 ### Pending Todos
 
 - Verify LinkedIn Marketing API Standard tier access is approved before starting Phase 8
@@ -100,5 +106,5 @@ Decisions are logged in PROJECT.md Key Decisions table.
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed Phase 10 Plan 01 (Content Generation Service)
+Stopped at: Completed Phase 10 Plan 02 (Content Controller)
 Resume file: None
