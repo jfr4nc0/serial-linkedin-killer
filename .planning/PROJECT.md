@@ -37,7 +37,18 @@ The outreach pipeline must handle large employee datasets (thousands of employee
 
 ### Active
 
-(None — next milestone not yet defined)
+## Current Milestone: v3.0 Content Campaign Intelligence
+
+**Goal:** Add a content campaign system that uses the LinkedIn Marketing API to publish LLM-generated sentiment variants, collect engagement metrics, and learn which content approach generates the best leads.
+
+**Target features:**
+- LinkedIn Marketing API integration (user-provided OAuth2 credentials)
+- LLM-powered content generation with multiple sentiment strategies (presets + custom)
+- Multi-variant campaign publishing via LinkedIn API
+- Engagement metrics collection (impressions, CTR, likes, shares, comments)
+- Lead fingerprinting — track which sentiment/tone generates which lead quality
+- Learning & optimization — recommend what works based on historical data
+- CLI + API interface for campaign management and results
 
 ### Out of Scope
 
@@ -83,4 +94,4 @@ The outreach pipeline must handle large employee datasets (thousands of employee
 | psutil lazy import in check_memory_threshold | Avoids circular imports with config_loader | ✓ Good |
 
 ---
-*Last updated: 2026-02-12 after v2.2 milestone*
+*Last updated: 2026-02-12 after v3.0 milestone start*
