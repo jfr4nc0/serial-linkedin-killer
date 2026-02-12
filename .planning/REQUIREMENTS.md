@@ -17,12 +17,12 @@ Requirements for Content Campaign Intelligence milestone. Each maps to roadmap p
 
 ### Campaign Management
 
-- [ ] **CAMP-01**: User can create a campaign with a base message, selected sentiments, and optional schedule
-- [ ] **CAMP-02**: User can list all campaigns with status, variant count, and latest metrics summary
-- [ ] **CAMP-03**: User can view a campaign's full details including all variants and their content
-- [ ] **CAMP-04**: User can update a campaign's base message or schedule before publishing
-- [ ] **CAMP-05**: User can delete a campaign (soft delete preserving historical data)
-- [ ] **CAMP-06**: Campaign tracks lifecycle status: draft, scheduled, active, paused, completed, failed
+- [x] **CAMP-01**: User can create a campaign with a base message, selected sentiments, and optional schedule
+- [x] **CAMP-02**: User can list all campaigns with status, variant count, and latest metrics summary
+- [x] **CAMP-03**: User can view a campaign's full details including all variants and their content
+- [x] **CAMP-04**: User can update a campaign's base message or schedule before publishing
+- [x] **CAMP-05**: User can delete a campaign (soft delete preserving historical data)
+- [x] **CAMP-06**: Campaign tracks lifecycle status: draft, scheduled, active, paused, completed, failed
 
 ### Content Generation
 
@@ -120,12 +120,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-03 | Phase 8 | Complete |
 | AUTH-04 | Phase 8 | Complete |
 | AUTH-05 | Phase 8 | Complete |
-| CAMP-01 | Phase 9 | Pending |
-| CAMP-02 | Phase 9 | Pending |
-| CAMP-03 | Phase 9 | Pending |
-| CAMP-04 | Phase 9 | Pending |
-| CAMP-05 | Phase 9 | Pending |
-| CAMP-06 | Phase 9 | Pending |
+| CAMP-01 | Phase 9 | Complete |
+| CAMP-02 | Phase 9 | Complete |
+| CAMP-03 | Phase 9 | Complete |
+| CAMP-04 | Phase 9 | Complete |
+| CAMP-05 | Phase 9 | Complete |
+| CAMP-06 | Phase 9 | Complete |
 | GEN-01 | Phase 10 | Pending |
 | GEN-02 | Phase 10 | Pending |
 | GEN-03 | Phase 10 | Pending |
