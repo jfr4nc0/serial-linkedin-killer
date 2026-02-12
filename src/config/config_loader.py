@@ -82,6 +82,23 @@ class MemoryConfig(BaseModel):
     threshold_percent: float = 80.0
 
 
+class LinkedInAPIConfig(BaseModel):
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = "http://localhost:8080/api/oauth/linkedin/callback"
+    scopes: List[str] = ["w_member_social", "w_organization_social", "r_organization_social", "rw_organization_admin"]
+    organization_urn: str = ""  # e.g. "urn:li:organization:12345"
+
+
+class CampaignConfig(BaseModel):
+    default_sentiments: List[str] = ["authority", "curiosity", "educational", "empathy", "urgency"]
+    max_variants: int = 5
+    poll_interval_hours: float = 6.0
+    post_stagger_minutes_min: float = 15.0
+    post_stagger_minutes_max: float = 30.0
+    token_expiry_warning_days: int = 7
+
+
 class AgentConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     mcp_server: MCPServerConfig = MCPServerConfig()
@@ -94,6 +111,8 @@ class AgentConfig(BaseModel):
     db: DBConfig = DBConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
     memory: MemoryConfig = MemoryConfig()
+    linkedin_api: LinkedInAPIConfig = LinkedInAPIConfig()
+    campaign: CampaignConfig = CampaignConfig()
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "agent.yaml"
@@ -135,6 +154,10 @@ def load_config(config_path: Optional[str] = None) -> AgentConfig:
         "db.company_url": os.getenv("COMPANY_DATABASE_URL"),
         "observability.log_level": os.getenv("LOG_LEVEL"),
         "memory.threshold_percent": os.getenv("MEMORY_THRESHOLD_PERCENT"),
+        "linkedin_api.client_id": os.getenv("LINKEDIN_API_CLIENT_ID"),
+        "linkedin_api.client_secret": os.getenv("LINKEDIN_API_CLIENT_SECRET"),
+        "linkedin_api.redirect_uri": os.getenv("LINKEDIN_API_REDIRECT_URI"),
+        "linkedin_api.organization_urn": os.getenv("LINKEDIN_API_ORGANIZATION_URN"),
     }
 
     for dotted_key, value in env_overrides.items():

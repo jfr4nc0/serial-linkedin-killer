@@ -56,3 +56,27 @@ observability:
 
 memory:
   threshold_percent: 80.0  # Circuit breaker triggers when RAM usage exceeds this %
+
+linkedin_api:
+  client_id: ""       # or use LINKEDIN_API_CLIENT_ID env var
+  client_secret: ""   # or use LINKEDIN_API_CLIENT_SECRET env var
+  redirect_uri: "http://localhost:8080/api/oauth/linkedin/callback"
+  scopes:
+    - "w_member_social"
+    - "w_organization_social"
+    - "r_organization_social"
+    - "rw_organization_admin"
+  organization_urn: ""  # e.g. "urn:li:organization:12345"
+
+campaign:
+  default_sentiments:
+    - "authority"
+    - "curiosity"
+    - "educational"
+    - "empathy"
+    - "urgency"
+  max_variants: 5
+  poll_interval_hours: 6.0
+  post_stagger_minutes_min: 15.0
+  post_stagger_minutes_max: 30.0
+  token_expiry_warning_days: 7
