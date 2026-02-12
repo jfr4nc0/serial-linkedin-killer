@@ -11,14 +11,25 @@ from src.core.api.schemas.campaign_schemas import (
     CampaignListResponse,
     CampaignStatusTransition,
     CampaignUpdateRequest,
+    GenerateVariantsRequest,
+    GenerateVariantsResponse,
+    VariantEditRequest,
+    VariantEditResponse,
 )
 from src.core.api.services.campaign_service import CampaignService
+from src.core.api.services.content_generation_service import ContentGenerationService
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
 
 def get_campaign_service() -> CampaignService:
     from src.core.api.app import get_campaign_service as _get
+
+    return _get()
+
+
+def get_content_generation_service() -> ContentGenerationService:
+    from src.core.api.app import get_content_generation_service as _get
 
     return _get()
 
@@ -154,6 +165,75 @@ def transition_status(
             raise HTTPException(status_code=404, detail=str(e))
         else:
             raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{campaign_id}/generate", response_model=GenerateVariantsResponse, status_code=200)
+def generate_variants(
+    campaign_id: str,
+    request: GenerateVariantsRequest,
+    campaign_service: CampaignService = Depends(get_campaign_service),
+    content_service: ContentGenerationService = Depends(get_content_generation_service),
+) -> GenerateVariantsResponse:
+    """Generate variant content for a campaign using LLM."""
+    try:
+        result = content_service.generate_campaign_variants(
+            campaign_id, custom_prompts=request.custom_prompts
+        )
+        return GenerateVariantsResponse(**result)
+    except ValueError as e:
+        # Check if it's a "not found" error or validation error
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        else:
+            raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/{campaign_id}/variants/{variant_id}", response_model=VariantEditResponse)
+def edit_variant(
+    campaign_id: str,
+    variant_id: str,
+    request: VariantEditRequest,
+    service: CampaignService = Depends(get_campaign_service),
+) -> VariantEditResponse:
+    """Edit a variant's content."""
+    try:
+        with service._session_factory() as session:
+            from src.core.db.models import CampaignVariant
+
+            # Query variant by both id and campaign_id
+            variant = (
+                session.query(CampaignVariant)
+                .filter(
+                    CampaignVariant.id == variant_id,
+                    CampaignVariant.campaign_id == campaign_id,
+                )
+                .first()
+            )
+
+            if not variant:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Variant {variant_id} not found in campaign {campaign_id}",
+                )
+
+            # Update content
+            variant.content = request.content
+            session.commit()
+
+            # Return updated variant
+            return VariantEditResponse(
+                id=variant.id,
+                campaign_id=variant.campaign_id,
+                sentiment=variant.sentiment,
+                content=variant.content,
+                is_selected=variant.is_selected,
+            )
     except HTTPException:
         raise
     except Exception as e:
