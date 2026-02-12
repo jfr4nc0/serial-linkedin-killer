@@ -115,52 +115,52 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| CAMP-01 | — | Pending |
-| CAMP-02 | — | Pending |
-| CAMP-03 | — | Pending |
-| CAMP-04 | — | Pending |
-| CAMP-05 | — | Pending |
-| CAMP-06 | — | Pending |
-| GEN-01 | — | Pending |
-| GEN-02 | — | Pending |
-| GEN-03 | — | Pending |
-| GEN-04 | — | Pending |
-| GEN-05 | — | Pending |
-| PUB-01 | — | Pending |
-| PUB-02 | — | Pending |
-| PUB-03 | — | Pending |
-| PUB-04 | — | Pending |
-| PUB-05 | — | Pending |
-| PUB-06 | — | Pending |
-| MET-01 | — | Pending |
-| MET-02 | — | Pending |
-| MET-03 | — | Pending |
-| MET-04 | — | Pending |
-| MET-05 | — | Pending |
-| MET-06 | — | Pending |
-| LEAD-01 | — | Pending |
-| LEAD-02 | — | Pending |
-| LEAD-03 | — | Pending |
-| LEAD-04 | — | Pending |
-| INTEL-01 | — | Pending |
-| INTEL-02 | — | Pending |
-| INTEL-03 | — | Pending |
-| INTEL-04 | — | Pending |
-| INFRA-01 | — | Pending |
-| INFRA-02 | — | Pending |
-| INFRA-03 | — | Pending |
-| INFRA-04 | — | Pending |
+| AUTH-01 | Phase 8 | Pending |
+| AUTH-02 | Phase 8 | Pending |
+| AUTH-03 | Phase 8 | Pending |
+| AUTH-04 | Phase 8 | Pending |
+| AUTH-05 | Phase 8 | Pending |
+| CAMP-01 | Phase 9 | Pending |
+| CAMP-02 | Phase 9 | Pending |
+| CAMP-03 | Phase 9 | Pending |
+| CAMP-04 | Phase 9 | Pending |
+| CAMP-05 | Phase 9 | Pending |
+| CAMP-06 | Phase 9 | Pending |
+| GEN-01 | Phase 10 | Pending |
+| GEN-02 | Phase 10 | Pending |
+| GEN-03 | Phase 10 | Pending |
+| GEN-04 | Phase 10 | Pending |
+| GEN-05 | Phase 10 | Pending |
+| PUB-01 | Phase 11 | Pending |
+| PUB-02 | Phase 11 | Pending |
+| PUB-03 | Phase 11 | Pending |
+| PUB-04 | Phase 11 | Pending |
+| PUB-05 | Phase 11 | Pending |
+| PUB-06 | Phase 11 | Pending |
+| MET-01 | Phase 12 | Pending |
+| MET-02 | Phase 12 | Pending |
+| MET-03 | Phase 12 | Pending |
+| MET-04 | Phase 12 | Pending |
+| MET-05 | Phase 12 | Pending |
+| MET-06 | Phase 12 | Pending |
+| LEAD-01 | Phase 13 | Pending |
+| LEAD-02 | Phase 13 | Pending |
+| LEAD-03 | Phase 13 | Pending |
+| LEAD-04 | Phase 13 | Pending |
+| INTEL-01 | Phase 13 | Pending |
+| INTEL-02 | Phase 13 | Pending |
+| INTEL-03 | Phase 13 | Pending |
+| INTEL-04 | Phase 13 | Pending |
+| INFRA-01 | Phase 8 | Pending |
+| INFRA-02 | Phase 8 | Pending |
+| INFRA-03 | Phase 8 | Pending |
+| INFRA-04 | Phase 8 | Pending |
 
 **Coverage:**
-- v3.0 requirements: 39 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 39
+- v3.0 requirements: 40 total
+- Mapped to phases: 40/40
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-12*
-*Last updated: 2026-02-12 after initial definition*
+*Last updated: 2026-02-12 after roadmap creation (traceability populated)*
