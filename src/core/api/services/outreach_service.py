@@ -26,6 +26,10 @@ from src.core.queue.producer import (
     TOPIC_OUTREACH_SEARCH_RESULTS,
     KafkaResultProducer,
 )
+from src.core.utils.memory_monitor import (
+    check_memory_threshold,
+    log_memory_checkpoint,
+)
 
 # Module-level thread pool with bounded workers
 _executor: ThreadPoolExecutor | None = None
@@ -103,6 +107,7 @@ class OutreachService:
         try:
             t_start = time.perf_counter()
             logger.info("Starting search and cluster", task_id=task_id)
+            log_memory_checkpoint("pre-search")
 
             # Filter companies from DB
             with CompanyDB(self._config.db.company_url) as db:
@@ -167,6 +172,26 @@ class OutreachService:
                 "[TIMING] Post-clustering",
                 elapsed_ms=round((t_post_cluster - t_pre_cluster) * 1000, 2),
             )
+            log_memory_checkpoint("post-clustering")
+
+            # Circuit breaker: check memory after clustering (most memory-intensive phase)
+            if check_memory_threshold():
+                logger.warning(
+                    "[MEMORY] Circuit breaker: pausing before session creation. "
+                    "Consider reducing company_limit or employees_per_company.",
+                    task_id=task_id,
+                )
+                # Force garbage collection to reclaim freed memory from del statements above
+                import gc
+
+                gc.collect()
+                log_memory_checkpoint("post-gc")
+                # Re-check after GC -- if still over threshold, continue anyway with warning
+                if check_memory_threshold():
+                    logger.warning(
+                        "[MEMORY] Still above threshold after GC. Continuing with degraded performance.",
+                        task_id=task_id,
+                    )
 
             # Filter by B2C/B2B segment if requested
             if request.segment:
@@ -283,6 +308,18 @@ class OutreachService:
 
         try:
             logger.info("Starting send phase", task_id=task_id, trace_id=trace_id)
+            log_memory_checkpoint("pre-send")
+
+            if check_memory_threshold():
+                logger.warning(
+                    "[MEMORY] Circuit breaker: high memory before send phase. "
+                    "Reducing batch may be needed.",
+                    task_id=task_id,
+                )
+                import gc
+
+                gc.collect()
+                log_memory_checkpoint("pre-send-post-gc")
 
             # Build list of employees with their templates attached
             employees_with_templates = []
