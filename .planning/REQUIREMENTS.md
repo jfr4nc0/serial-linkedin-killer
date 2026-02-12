@@ -26,11 +26,11 @@ Requirements for Content Campaign Intelligence milestone. Each maps to roadmap p
 
 ### Content Generation
 
-- [ ] **GEN-01**: System generates multiple content variants from a base message using LLM (Gemini or local provider via existing factory)
-- [ ] **GEN-02**: System provides sentiment presets (urgency, authority, calm, empathy, curiosity, social proof, educational, provocative, inspirational, humorous)
-- [ ] **GEN-03**: User can define custom sentiment prompts for variant generation
-- [ ] **GEN-04**: User can review and manually edit generated variants before publishing
-- [ ] **GEN-05**: System ensures content diversity between variants to reduce spam detection risk (>70% text difference)
+- [x] **GEN-01**: System generates multiple content variants from a base message using LLM (Gemini or local provider via existing factory)
+- [x] **GEN-02**: System provides sentiment presets (urgency, authority, calm, empathy, curiosity, social proof, educational, provocative, inspirational, humorous)
+- [x] **GEN-03**: User can define custom sentiment prompts for variant generation
+- [x] **GEN-04**: User can review and manually edit generated variants before publishing
+- [x] **GEN-05**: System ensures content diversity between variants to reduce spam detection risk (>70% text difference)
 
 ### Publishing
 
@@ -126,11 +126,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CAMP-04 | Phase 9 | Complete |
 | CAMP-05 | Phase 9 | Complete |
 | CAMP-06 | Phase 9 | Complete |
-| GEN-01 | Phase 10 | Pending |
-| GEN-02 | Phase 10 | Pending |
-| GEN-03 | Phase 10 | Pending |
-| GEN-04 | Phase 10 | Pending |
-| GEN-05 | Phase 10 | Pending |
+| GEN-01 | Phase 10 | Complete |
+| GEN-02 | Phase 10 | Complete |
+| GEN-03 | Phase 10 | Complete |
+| GEN-04 | Phase 10 | Complete |
+| GEN-05 | Phase 10 | Complete |
 | PUB-01 | Phase 11 | Pending |
 | PUB-02 | Phase 11 | Pending |
 | PUB-03 | Phase 11 | Pending |

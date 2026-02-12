@@ -89,8 +89,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 10-01-PLAN.md -- Content generation service with sentiment presets and text diversity validator
-- [ ] 10-02-PLAN.md -- Generation and edit REST API endpoints with app registration
+- [x] 10-01-PLAN.md -- Content generation service with sentiment presets and text diversity validator
+- [x] 10-02-PLAN.md -- Generation and edit REST API endpoints with app registration
 
 **Success Criteria:**
 
@@ -165,7 +165,7 @@ Plans:
 | 7. Memory Monitoring | v2.2 | 1/1 | Complete | 2026-02-12 |
 | 8. API Foundation & Authentication | v3.0 | 2/2 | Complete | 2026-02-12 |
 | 9. Campaign Management | v3.0 | 2/2 | Complete | 2026-02-12 |
-| 10. Content Generation | v3.0 | 0/2 | Not Started | -- |
+| 10. Content Generation | v3.0 | 2/2 | Complete | 2026-02-12 |
 | 11. LinkedIn Publishing | v3.0 | 0/? | Not Started | -- |
 | 12. Metrics & Analytics | v3.0 | 0/? | Not Started | -- |
 | 13. Lead Attribution & Intelligence | v3.0 | 0/? | Not Started | -- |
