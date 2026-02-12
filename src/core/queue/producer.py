@@ -11,6 +11,8 @@ from src.core.queue.config import (  # noqa: F401 - re-exported
     TOPIC_JOB_RESULTS,
     TOPIC_OUTREACH_RESULTS,
     TOPIC_OUTREACH_SEARCH_RESULTS,
+    TOPIC_CAMPAIGN_PUBLISH_RESULTS,
+    TOPIC_CAMPAIGN_METRICS_UPDATES,
 )
 
 
