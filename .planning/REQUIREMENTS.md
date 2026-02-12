@@ -20,9 +20,9 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ### Memory Monitoring
 
-- [ ] **MON-01**: Memory monitor utility using psutil reports current RSS and percent usage
-- [ ] **MON-02**: Circuit breaker pauses outreach batch processing when memory exceeds configurable threshold (default 80%)
-- [ ] **MON-03**: Memory usage is logged at key pipeline checkpoints (pre-search, post-cluster, pre-send)
+- [x] **MON-01**: Memory monitor utility using psutil reports current RSS and percent usage
+- [x] **MON-02**: Circuit breaker pauses outreach batch processing when memory exceeds configurable threshold (default 80%)
+- [x] **MON-03**: Memory usage is logged at key pipeline checkpoints (pre-search, post-cluster, pre-send)
 
 ### LangGraph State Optimization
 
@@ -64,9 +64,9 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 | STATE-02 | Phase 6 | Complete |
 | DEDUP-01 | Phase 6 | Complete |
 | DEDUP-02 | Phase 6 | Complete |
-| MON-01 | Phase 7 | Pending |
-| MON-02 | Phase 7 | Pending |
-| MON-03 | Phase 7 | Pending |
+| MON-01 | Phase 7 | Complete |
+| MON-02 | Phase 7 | Complete |
+| MON-03 | Phase 7 | Complete |
 
 **Coverage:**
 - v2.2 requirements: 12 total
@@ -75,4 +75,4 @@ Requirements for RAM safety caps. Each maps to roadmap phases.
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after Phase 6 completion*
+*Last updated: 2026-02-12 after Phase 7 completion — all v2.2 requirements complete*
