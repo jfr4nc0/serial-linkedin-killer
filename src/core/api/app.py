@@ -7,6 +7,7 @@ from loguru import logger
 
 from src.config.config_loader import load_config
 from src.core.api.controllers.job_controller import router as job_router
+from src.core.api.controllers.oauth_controller import router as oauth_router
 from src.core.api.controllers.outreach_controller import router as outreach_router
 from src.core.api.services.job_service import JobService
 from src.core.api.services.outreach_service import OutreachService
@@ -43,6 +44,18 @@ async def lifespan(app: FastAPI):
 
     ensure_topics()
 
+    # Check LinkedIn OAuth token health on startup
+    try:
+        from src.core.providers.linkedin_api_client import LinkedInAPIClient
+        li_client = LinkedInAPIClient(_agent_db._engine)
+        token_health = li_client.check_token_health()
+        if token_health["warning"]:
+            logger.warning(token_health["warning"])
+        elif not token_health["valid"]:
+            logger.info("LinkedIn API: No OAuth token configured. Visit /api/oauth/linkedin/authorize to authenticate.")
+    except Exception as e:
+        logger.debug(f"LinkedIn token health check skipped: {e}")
+
     _session_store = SessionStore(agent_db=_agent_db, ttl=3600)
     _job_service = JobService(_producer)
     _outreach_service = OutreachService(_producer, _session_store)
@@ -76,6 +89,7 @@ app = FastAPI(
 
 app.include_router(job_router)
 app.include_router(outreach_router)
+app.include_router(oauth_router)
 
 
 @app.get("/health")
