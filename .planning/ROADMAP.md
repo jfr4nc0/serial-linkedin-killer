@@ -93,10 +93,10 @@ Plans:
   2. Outreach batch processing pauses when memory exceeds configured threshold (default 80%)
   3. Memory usage is logged at search start, post-clustering, and pre-send checkpoints
   4. Circuit breaker logs warning with current memory stats when threshold is exceeded
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 07-01: [To be planned]
+- [ ] 07-01-PLAN.md — Memory monitor utility, config, circuit breaker, and outreach wiring (MON-01, MON-02, MON-03)
 
 ---
 
@@ -113,4 +113,4 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 4. Quick Wins | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
 | 5. Streaming Queries | v2.2 | 1/1 | ✓ Complete | 2026-02-11 |
 | 6. State Optimization | v2.2 | 2/2 | ✓ Complete | 2026-02-11 |
-| 7. Memory Monitoring | v2.2 | 0/TBD | Not started | — |
+| 7. Memory Monitoring | v2.2 | 0/1 | Not started | — |
