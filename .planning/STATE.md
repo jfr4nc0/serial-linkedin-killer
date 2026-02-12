@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-12)
 ## Current Position
 
 Phase: 9 - Campaign Management
-Plan: 1/2
+Plan: 2/2
 Status: In Progress
-Last activity: 2026-02-12 -- Completed Phase 09 Plan 01 (Campaign Data Layer)
+Last activity: 2026-02-12 -- Completed Phase 09 Plan 02 (Campaign Controller)
 
-Progress: [██........] 17% (1/6 v3.0 phases complete)
+Progress: [███.......] 33% (2/6 v3.0 phases complete)
 
 ## Performance Metrics
 
 **Velocity (v2.1 + v2.2 + v3.0):**
-- Total plans completed: 11
-- Average duration: 3.0 min
-- Total execution time: 0.56 hours
+- Total plans completed: 12
+- Average duration: 2.9 min
+- Total execution time: 0.59 hours
 
 **By Phase:**
 
@@ -35,7 +35,7 @@ Progress: [██........] 17% (1/6 v3.0 phases complete)
 | 06 | 2 | 389s | 195s |
 | 07 | 1 | 234s | 234s |
 | 08 | 2 | 517s | 259s |
-| 09 | 1 | 151s | 151s |
+| 09 | 2 | 250s | 125s |
 
 *Updated after each plan completion*
 
@@ -71,6 +71,13 @@ Decisions are logged in PROJECT.md Key Decisions table.
 - Variants created with empty content field (filled by Phase 10)
 - Latest metrics aggregation uses subquery to get max polled_at per variant
 
+**Phase 9 Plan 2 decisions:**
+- Campaign controller follows outreach_controller pattern (Depends injection, lazy import getter)
+- Default sentiments/organization_urn applied from config if not provided in request
+- POST /api/campaigns returns 201 with full campaign details (not just ID)
+- Status transitions return 404 for not found, 400 for invalid transitions
+- Error categorization: ValueError with "not found" -> 404, other ValueError -> 400
+
 ### Pending Todos
 
 - Verify LinkedIn Marketing API Standard tier access is approved before starting Phase 8
@@ -85,5 +92,5 @@ Decisions are logged in PROJECT.md Key Decisions table.
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed Phase 09 Plan 01 (Campaign Data Layer)
+Stopped at: Completed Phase 09 Plan 02 (Campaign Controller)
 Resume file: None
