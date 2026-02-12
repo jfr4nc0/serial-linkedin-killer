@@ -86,6 +86,12 @@ Plans:
 
 **Requirements:** GEN-01, GEN-02, GEN-03, GEN-04, GEN-05
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md -- Content generation service with sentiment presets and text diversity validator
+- [ ] 10-02-PLAN.md -- Generation and edit REST API endpoints with app registration
+
 **Success Criteria:**
 
 1. User triggers variant generation for a campaign and receives multiple content variants with different sentiment angles, generated via the existing LLM client factory (Gemini or local provider)
@@ -159,7 +165,7 @@ Plans:
 | 7. Memory Monitoring | v2.2 | 1/1 | Complete | 2026-02-12 |
 | 8. API Foundation & Authentication | v3.0 | 2/2 | Complete | 2026-02-12 |
 | 9. Campaign Management | v3.0 | 2/2 | Complete | 2026-02-12 |
-| 10. Content Generation | v3.0 | 0/? | Not Started | -- |
+| 10. Content Generation | v3.0 | 0/2 | Not Started | -- |
 | 11. LinkedIn Publishing | v3.0 | 0/? | Not Started | -- |
 | 12. Metrics & Analytics | v3.0 | 0/? | Not Started | -- |
 | 13. Lead Attribution & Intelligence | v3.0 | 0/? | Not Started | -- |
