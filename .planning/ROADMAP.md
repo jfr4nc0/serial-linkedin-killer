@@ -39,6 +39,12 @@
 
 **Requirements:** INFRA-01, INFRA-02, INFRA-03, INFRA-04, AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md -- Infrastructure foundation (deps, config, DB schema, Kafka topics)
+- [ ] 08-02-PLAN.md -- LinkedIn API client with OAuth2 and FastAPI endpoints
+
 **Success Criteria:**
 
 1. User can configure LinkedIn API credentials (client_id, client_secret) via agent.yaml or environment variables and initiate OAuth2 authorization code flow that stores tokens in the database
@@ -145,9 +151,9 @@
 | 5. Streaming Queries | v2.2 | 1/1 | Complete | 2026-02-11 |
 | 6. State Optimization | v2.2 | 2/2 | Complete | 2026-02-11 |
 | 7. Memory Monitoring | v2.2 | 1/1 | Complete | 2026-02-12 |
-| 8. API Foundation & Authentication | v3.0 | 0/? | Not Started | — |
-| 9. Campaign Management | v3.0 | 0/? | Not Started | — |
-| 10. Content Generation | v3.0 | 0/? | Not Started | — |
-| 11. LinkedIn Publishing | v3.0 | 0/? | Not Started | — |
-| 12. Metrics & Analytics | v3.0 | 0/? | Not Started | — |
-| 13. Lead Attribution & Intelligence | v3.0 | 0/? | Not Started | — |
+| 8. API Foundation & Authentication | v3.0 | 0/2 | Not Started | -- |
+| 9. Campaign Management | v3.0 | 0/? | Not Started | -- |
+| 10. Content Generation | v3.0 | 0/? | Not Started | -- |
+| 11. LinkedIn Publishing | v3.0 | 0/? | Not Started | -- |
+| 12. Metrics & Analytics | v3.0 | 0/? | Not Started | -- |
+| 13. Lead Attribution & Intelligence | v3.0 | 0/? | Not Started | -- |
