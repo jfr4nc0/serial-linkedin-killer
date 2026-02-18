@@ -232,6 +232,11 @@ class MessageSendGraph:
             driver = state["browser_manager"].driver
             driver.get(state["employee_profile_url"])
             state["browser_manager"].random_delay(2, 3)
+
+            # Verify page loaded on LinkedIn
+            if "linkedin.com" not in driver.current_url:
+                return {**state, "error": "Navigation failed - not on LinkedIn"}
+
             return state
         except Exception as e:
             return {**state, "error": f"Failed to navigate to profile: {str(e)}"}
