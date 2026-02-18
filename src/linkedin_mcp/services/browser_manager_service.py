@@ -276,6 +276,16 @@ class BrowserManagerService(IBrowserManager):
                     pass
         cls._instances.clear()
 
+    def is_driver_alive(self) -> bool:
+        """Check if the WebDriver process is still alive and responsive."""
+        if not self.driver:
+            return False
+        try:
+            _ = self.driver.window_handles
+            return True
+        except Exception:
+            return False
+
     # Interface methods
     def get_driver(self):
         """Get the current WebDriver instance."""

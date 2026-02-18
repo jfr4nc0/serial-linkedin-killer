@@ -322,6 +322,13 @@ class EmployeeOutreachService(IEmployeeOutreachService):
 
             for i, msg in enumerate(messages):
                 try:
+                    # Ensure driver is alive before each message
+                    if not self.browser_manager.is_driver_alive():
+                        logger.warning("Driver died, restarting browser...")
+                        self.browser_manager.close_browser()
+                        self._ensure_authenticated(user_credentials)
+                        logger.info("Browser restarted and re-authenticated")
+
                     logger.info(
                         f"Sending message {i + 1}/{len(messages)} to {msg.get('name', '')}",
                     )
@@ -333,6 +340,12 @@ class EmployeeOutreachService(IEmployeeOutreachService):
                         subject=msg.get("subject", ""),
                     )
                     results.append(result)
+
+                    # Log result status
+                    if result.sent:
+                        logger.info(f"Successfully sent to {msg.get('name')} via {result.method}")
+                    else:
+                        logger.warning(f"Failed to send to {msg.get('name')}: {result.error}")
                 except Exception as e:
                     logger.error(
                         f"Failed to send message to {msg.get('name', '')}: {e}"
