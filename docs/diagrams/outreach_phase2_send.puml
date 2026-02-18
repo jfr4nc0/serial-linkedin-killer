@@ -23,6 +23,7 @@ end box
 
 box "LinkedIn MCP Server" #LightCoral
     participant "MCP Server" as MCP
+    participant "EmployeeOutreach\nService" as EOS
     participant "MessageSend\nGraph" as MSG
     participant "BrowserManager" as BM
 end box
@@ -43,6 +44,9 @@ note right of CLI
       }
     - credentials: {email, password}
     - warm_up: bool
+    - max_per_company: int (optional, anti-spam)
+    - selected_employees: [url, ...] (optional)
+    - reassignments: {url: new_role} (optional)
 end note
 
 activate CTRL
@@ -96,6 +100,15 @@ par Background Thread Execution
     activate THREAD #LightBlue
     note over THREAD: _run_send() executing
 
+    == Apply Reassignments ==
+
+    THREAD -> THREAD: Apply role reassignments from request\n(fix LLM misclassifications)
+    note right of THREAD
+        Moves employees between role groups
+        in the clustered dict before building
+        the send list
+    end note
+
     == Build Employee List ==
 
     THREAD -> THREAD: employees_with_templates = []
@@ -109,6 +122,10 @@ par Background Thread Execution
         end
     end
 
+    alt selected_employees filter provided
+        THREAD -> THREAD: Filter to only specified profile URLs
+    end
+
     alt No employees selected
         THREAD -> PRODUCER: publish(OutreachSendResponse)\n{status: "no employees", results: []}
         THREAD -> THREAD: return
@@ -116,59 +133,77 @@ par Background Thread Execution
 
     == Agent Send Phase ==
 
-    THREAD -> AGENT: run_send(employees_with_templates,\ncredentials, daily_limit, trace_id)
+    THREAD -> AGENT: run_send(employees_with_templates,\ncredentials, daily_limit,\nmax_per_company, trace_id)
     activate AGENT
 
     AGENT -> AGENT: Initialize OutreachAgentState
-    AGENT -> AGENT: Invoke _send_graph
+    AGENT -> AGENT: Invoke _send_graph → send_messages_with_templates_node
+
+    == Bulk Pre-filter & Template Render ==
+
+    AGENT -> DB: get_messaged_profile_urls()
+    DB --> AGENT: {messaged_urls set}
+    note right of DB
+        Single bulk query — no per-employee
+        DB round-trips during filtering
+    end note
 
     AGENT -> DB: get_daily_quota()
     DB --> AGENT: messages_sent_today
 
-    == Message Loop ==
-
-    loop For each employee in list
-        alt messages_sent >= daily_limit
-            AGENT -> AGENT: Log "Daily limit reached"
+    AGENT -> AGENT: messages_to_send = []
+    loop For each employee
+        alt messages_sent + pending >= daily_limit
             AGENT -> AGENT: Break loop
         end
 
-        AGENT -> DB: was_already_messaged(profile_url)?
-        DB --> AGENT: already_messaged
-
-        alt already_messaged == true
-            AGENT -> AGENT: Log "Skipping: already messaged"
-            AGENT -> AGENT: Continue to next
+        alt profile_url in messaged_urls
+            AGENT -> AGENT: Skip (already messaged)
+        else max_per_company exceeded for this company
+            AGENT -> AGENT: Skip (company limit reached)
+        else template missing
+            AGENT -> AGENT: Skip (warn and continue)
+        else
+            AGENT -> AGENT: render_template(template, variables)
+            note right of AGENT
+                Variables:
+                - employee_name (first name)
+                - company_name
+                - employee_title
+                - my_name, my_role (static vars)
+            end note
+            AGENT -> AGENT: Append to messages_to_send
+            AGENT -> AGENT: Track company_message_count[company]
         end
+    end
 
-        == Template Rendering ==
+    == Single Batch MCP Send ==
 
-        AGENT -> AGENT: render_template(template, variables)
-        note right of AGENT
-            Variables:
-            - employee_name (first name)
-            - employee_full_name
-            - company_name
-            - employee_title
-            - my_name, my_role (static)
-        end note
+    AGENT -> SYNC: send_messages_batch(\n[{profile_url, name, message, subject}, ...],\ncredentials, trace_id)
+    activate SYNC
+    note right of SYNC
+        All messages sent in one call.
+        Browser is opened once and
+        reused across the entire batch.
+    end note
 
-        == MCP Send Message ==
+    SYNC -> MCP: HTTP POST /mcp\ncall_tool("send_messages_batch")
+    activate MCP
 
-        AGENT -> SYNC: send_message(\nprofile_url, name, message,\ncredentials, trace_id)
-        activate SYNC
-        note right of SYNC
-            Persistent connection
-            (lazy init, reused)
-        end note
+    MCP -> EOS: send_messages_batch(messages, credentials)
+    activate EOS
 
-        SYNC -> MCP: HTTP POST /mcp\ncall_tool("send_message")
-        activate MCP
+    EOS -> EOS: _ensure_authenticated()
+    EOS -> BM: start_browser() once
+    activate BM
+    BM -> BM: Initialize Selenium WebDriver
+    BM --> EOS: driver ready
+    deactivate BM
 
-        MCP -> MCP: _ensure_authenticated()
-        MCP -> BM: start_browser() if needed
+    loop For each message in batch
+        EOS -> EOS: is_driver_alive()?\nRestart browser + re-auth if dead
 
-        MCP -> MSG: MessageSendGraph.execute()
+        EOS -> MSG: MessageSendGraph.execute()
         activate MSG
 
         MSG -> MSG: navigate_to_profile(url)
@@ -178,7 +213,7 @@ par Background Thread Execution
         note right of MSG
             Check for:
             1. Message button
-            2. Connect button
+            2. Connect button (direct)
             3. More dropdown → Connect
         end note
 
@@ -188,35 +223,43 @@ par Background Thread Execution
             MSG -> MSG: Wait for dialog
             MSG -> MSG: Type message in textbox
             MSG -> MSG: Click Send button
-            MSG --> MCP: {sent: true, method: "direct_message"}
+            MSG --> EOS: MessageResult{sent:true, method:"direct_message"}
 
         else Connect button found
             MSG -> MSG: send_connection_request()
             MSG -> MSG: Click Connect button
-            MSG -> MSG: Click "Add a note"
+            MSG -> MSG: Click "Add a note" (shadow DOM aware)
             MSG -> MSG: Type note (300 char max)
             MSG -> MSG: Click Send
-            MSG --> MCP: {sent: true, method: "connection_request"}
+            MSG --> EOS: MessageResult{sent:true, method:"connection_request"}
 
         else No action available
-            MSG --> MCP: {sent: false, error: "No button found"}
+            MSG --> EOS: MessageResult{sent:false, error:"No button found"}
         end
         deactivate MSG
 
-        MCP -> BM: close_browser()
-        MCP --> SYNC: MessageResult
-        deactivate MCP
+        EOS -> EOS: anti-detection delay\n(delay_between_messages_min–max s)
+    end
 
-        SYNC --> AGENT: result
-        deactivate SYNC
+    EOS -> BM: close_browser() once (end of batch)
+    EOS --> MCP: [MessageResult, ...]
+    deactivate EOS
 
-        == Record Result ==
+    MCP --> SYNC: [MessageResult, ...]
+    deactivate MCP
 
-        AGENT -> DB: record_message(\nprofile_url, name, sent,\nmethod, error)
+    SYNC --> AGENT: [results]
+    deactivate SYNC
+
+    == Record Results ==
+
+    loop For each result
+        AGENT -> DB: record_message(\nprofile_url, name, sent,\nmethod, error,\ncompany_name, company_linkedin_url)
         note right of DB
             INSERT INTO messages_sent
             (employee_profile_url, employee_name,
-             sent_at, success, method, error)
+             sent_at, success, method, error,
+             company_name, company_linkedin_url)
         end note
 
         alt sent == true
@@ -229,7 +272,7 @@ par Background Thread Execution
             DB --> AGENT: new_count
         end
 
-        AGENT -> AGENT: Add result to message_results
+        AGENT -> AGENT: Add result (with _role) to message_results
     end
 
     AGENT --> THREAD: {message_results,\nmessages_sent_today,\ncurrent_status}

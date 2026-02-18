@@ -10,13 +10,12 @@ participant "LinkedInMCP\nClientSync" as MCP_CLIENT
 participant "LinkedIn MCP\nServer" as MCP_SERVER
 participant "Browser\nGraphs" as GRAPHS
 participant "AgentDB" as DB
-participant "SharedDB\n(SearchResult)" as SHARED_DB
 participant "SessionStore" as SESS
 participant "Kafka" as KAFKA
 
 == PHASE 1: SEARCH & CLUSTER (Async via Kafka) ==
 
-CLI -> CTRL: POST /api/outreach/search\n{filters, credentials, total_limit,\ncompany_limit, segment}
+CLI -> CTRL: POST /api/outreach/search\n{filters, credentials, total_limit,\ncompany_limit, segment,\nexclude_companies, exclude_profile_urls}
 activate CTRL
 
 CTRL -> SVC: submit_search(request)
@@ -42,15 +41,16 @@ DB --> SVC: [company dicts]
 
 SVC -> SVC: Apply company_limit slice
 
-SVC -> AGENT: run_search_only(companies, credentials)
+SVC -> AGENT: run_search_only(companies, credentials,\ntotal_limit, exclude_companies,\nexclude_profile_urls)
 activate AGENT
 
 AGENT -> DB: get_messaged_profile_urls()
 DB --> AGENT: {messaged URLs}
+note right of AGENT: Merged with user-provided\nexclude_profile_urls
 
 AGENT -> AGENT: Generate batch_id
 
-AGENT -> MCP_CLIENT: search_employees_batch(\ncompanies, batch_id, exclude_profile_urls)
+AGENT -> MCP_CLIENT: search_employees_batch(\ncompanies, batch_id,\nexclude_profile_urls, exclude_companies)
 activate MCP_CLIENT
 
 MCP_CLIENT -> MCP_SERVER: HTTP POST /mcp\ncall_tool("search_employees_batch")
@@ -76,7 +76,7 @@ loop For each company
     MCP_SERVER -> GRAPHS: EmployeeSearchGraph.execute()
     GRAPHS --> MCP_SERVER: [employees]
     MCP_SERVER -> MCP_SERVER: Filter exclude_profile_urls
-    MCP_SERVER -> SHARED_DB: INSERT SearchResult rows\n(batch_id, company, employees)
+    MCP_SERVER -> DB: INSERT SearchResult rows\n(batch_id, company, employees)
 end
 
 MCP_SERVER -> MCP_SERVER: close_browser()
@@ -86,16 +86,15 @@ deactivate MCP_SERVER
 AGENT -> KAFKA: consume(mcp-search-complete,\nbatch_id, timeout=3600s)
 KAFKA --> AGENT: MCPSearchComplete\n{status, total_employees, companies_processed}
 
-AGENT -> SHARED_DB: get_search_results(batch_id)
-SHARED_DB --> AGENT: [employee dicts]
+AGENT -> DB: get_search_results(batch_id)
+DB --> AGENT: [employee dicts]
 
-AGENT -> SHARED_DB: delete_search_results(batch_id)
+AGENT -> DB: delete_search_results(batch_id)
 
 AGENT -> AGENT: Flatten results, add company_name
 AGENT --> SVC: employees_found
 deactivate AGENT
 
-SVC -> DB: Filter already-messaged (safety net)
 SVC -> SVC: cluster_employees_by_role(employees)
 
 alt Segment filter requested
@@ -103,7 +102,7 @@ alt Segment filter requested
     SVC -> SVC: Apply total_limit after filtering
 end
 
-SVC -> SESS: create(employees, clustered, companies)
+SVC -> SESS: create(clustered, trace_id)
 SESS -> DB: save_session(session_id, data, ttl=3600)
 SESS --> SVC: session_id
 
@@ -117,7 +116,7 @@ CLI -> CLI: Display role_groups\nUser selects roles & templates
 
 == PHASE 2: SEND MESSAGES (Async via Kafka) ==
 
-CLI -> CTRL: POST /api/outreach/send\n{session_id, selected_groups, credentials}
+CLI -> CTRL: POST /api/outreach/send\n{session_id, selected_groups, credentials,\nmax_per_company, selected_employees,\nreassignments}
 activate CTRL
 
 CTRL -> SVC: submit_send(request)
@@ -139,51 +138,57 @@ CTRL --> CLI: {task_id}
 activate SVC #LightBlue
 note over SVC: Background Thread
 
-SVC -> SVC: Build employees_with_templates\n(attach _template, _role)
+SVC -> SVC: Apply reassignments to clustered\n(fix LLM misclassifications)
+SVC -> SVC: Build employees_with_templates\n(attach _template, _role per employee)
 
-SVC -> AGENT: run_send(employees_with_templates,\ncredentials, daily_limit)
+SVC -> AGENT: run_send(employees_with_templates,\ncredentials, daily_limit, max_per_company)
 activate AGENT
 
-loop For each employee
-    AGENT -> DB: was_already_messaged(url)?
-    DB --> AGENT: bool
+AGENT -> DB: get_messaged_profile_urls()
+DB --> AGENT: {messaged_urls set}
+note right of AGENT: Bulk prefetch — no per-employee DB query
 
-    alt Not already messaged
-        AGENT -> AGENT: render_template(template, vars)
+AGENT -> AGENT: Pre-filter employees\n(daily limit, per-company limit,\nalready-messaged check)
+AGENT -> AGENT: Render all templates\n(employee_name, company_name,\nemployee_title substituted)
 
-        AGENT -> MCP_CLIENT: send_message(url, name, message)
-        activate MCP_CLIENT
+AGENT -> MCP_CLIENT: send_messages_batch(\n[{profile_url, name, message}, ...])
+activate MCP_CLIENT
 
-        MCP_CLIENT -> MCP_SERVER: call_tool("send_message")
-        activate MCP_SERVER
+MCP_CLIENT -> MCP_SERVER: HTTP POST /mcp\ncall_tool("send_messages_batch")
+activate MCP_SERVER
 
-        MCP_SERVER -> GRAPHS: MessageSendGraph.execute()
-        activate GRAPHS
-        GRAPHS -> GRAPHS: navigate_to_profile
-        GRAPHS -> GRAPHS: detect_action (Message/Connect)
-        alt Message button available
-            GRAPHS -> GRAPHS: send_direct_message()
-        else Connect only
-            GRAPHS -> GRAPHS: send_connection_request()
-        end
-        GRAPHS --> MCP_SERVER: MessageResult
-        deactivate GRAPHS
+MCP_SERVER -> MCP_SERVER: _ensure_authenticated()
+MCP_SERVER -> MCP_SERVER: start_browser() once
 
-        MCP_SERVER --> MCP_CLIENT: {sent, method, error}
-        deactivate MCP_SERVER
+loop For each message in batch
+    MCP_SERVER -> MCP_SERVER: is_driver_alive()? restart if dead
 
-        MCP_CLIENT --> AGENT: result
-        deactivate MCP_CLIENT
-
-        AGENT -> DB: record_message(url, success, method)
-
-        alt sent == true
-            AGENT -> DB: increment_daily_quota()
-        end
+    MCP_SERVER -> GRAPHS: MessageSendGraph.execute()
+    activate GRAPHS
+    GRAPHS -> GRAPHS: navigate_to_profile
+    GRAPHS -> GRAPHS: detect_action (Message/Connect)
+    alt Message button available
+        GRAPHS -> GRAPHS: send_direct_message()
+    else Connect only
+        GRAPHS -> GRAPHS: send_connection_request()
     end
+    GRAPHS --> MCP_SERVER: MessageResult
+    deactivate GRAPHS
 
-    alt messages_sent >= daily_limit
-        AGENT -> AGENT: Break loop
+    MCP_SERVER -> MCP_SERVER: anti-detection delay\n(delay_between_messages_min/max)
+end
+
+MCP_SERVER -> MCP_SERVER: close_browser() once
+MCP_SERVER --> MCP_CLIENT: [MessageResult, ...]
+deactivate MCP_SERVER
+
+MCP_CLIENT --> AGENT: [results]
+deactivate MCP_CLIENT
+
+loop For each result
+    AGENT -> DB: record_message(url, success, method)
+    alt sent == true
+        AGENT -> DB: increment_daily_quota()
     end
 end
 

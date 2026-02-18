@@ -44,6 +44,8 @@ note right of CLI
     - total_limit: int (optional)
     - company_limit: int (optional)
     - segment: "b2c" | "b2b" (optional)
+    - exclude_companies: [url, ...] (optional)
+    - exclude_profile_urls: [url, ...] (optional)
 end note
 
 activate CTRL
