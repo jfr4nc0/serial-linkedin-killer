@@ -1,4 +1,4 @@
-"""LLM client factory supporting local OpenAI-compatible and Google Gemini providers."""
+"""LLM client factory supporting local OpenAI-compatible, Google Gemini, and AWS Bedrock providers."""
 
 import os
 
@@ -20,12 +20,15 @@ def get_llm_client() -> BaseChatModel:
     Supported providers:
     - "local": Returns ChatOpenAI configured for local llama.cpp server
     - "gemini": Returns ChatGoogleGenerativeAI configured for Google Gemini API
+    - "bedrock": Returns ChatBedrockConverse configured for AWS Bedrock.
+                 Auth via AWS_BEARER_TOKEN_BEDROCK env var (long-term API key) or
+                 standard AWS credential chain (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY).
 
     Returns:
-        BaseChatModel: Configured LLM client (ChatOpenAI or ChatGoogleGenerativeAI)
+        BaseChatModel: Configured LLM client
 
     Raises:
-        ValueError: If provider is not "local" or "gemini"
+        ValueError: If provider is not "local", "gemini", or "bedrock"
     """
     # Provider resolution (env var > config > default)
     config = load_config()
@@ -50,9 +53,25 @@ def get_llm_client() -> BaseChatModel:
             temperature=config.llm.temperature,
             max_tokens=config.llm.max_tokens,
         )
+    elif provider == "bedrock":
+        from langchain_aws import ChatBedrockConverse
+
+        region = os.getenv("AWS_DEFAULT_REGION", config.llm.bedrock_region)
+        bedrock_kwargs: dict = dict(
+            model_id=config.llm.bedrock_model,
+            region_name=region,
+            temperature=config.llm.temperature,
+            max_tokens=config.llm.max_tokens,
+        )
+        # `provider` must be set explicitly when model_id is an ARN (provisioned/custom
+        # models). For standard IDs like "anthropic.claude-…" or "us.anthropic.…"
+        # ChatBedrockConverse auto-detects it.
+        if config.llm.bedrock_provider:
+            bedrock_kwargs["provider"] = config.llm.bedrock_provider
+        client = ChatBedrockConverse(**bedrock_kwargs)
     else:
         raise ValueError(
-            f"Unknown LLM provider: '{provider}'. Must be 'local' or 'gemini'. "
+            f"Unknown LLM provider: '{provider}'. Must be 'local', 'gemini', or 'bedrock'. "
             f"Set via LLM_PROVIDER env var or llm.provider in config/agent.yaml."
         )
 

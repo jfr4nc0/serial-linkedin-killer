@@ -13,8 +13,11 @@ class LLMConfig(BaseModel):
     api_key: str = "not-needed"
     temperature: float = 0.1
     max_tokens: int = 2000
-    provider: str = "local"        # "local" or "gemini"
+    provider: str = "local"        # "local", "gemini", or "bedrock"
     gemini_model: str = "gemini-3-flash-preview"
+    bedrock_model: str = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    bedrock_region: str = "us-east-1"
+    bedrock_provider: str = ""  # Only needed for ARN-based model IDs (auto-detected otherwise)
     title_cache_max_size: int = 10000
 
 

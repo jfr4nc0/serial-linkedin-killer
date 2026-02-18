@@ -3,8 +3,11 @@ llm:
   api_key: "not-needed"
   temperature: 0.1
   max_tokens: 2000
-  provider: "gemini" # Options: "local" (default), "gemini". Override with LLM_PROVIDER env var
+  provider: "bedrock" # Options: "local" (default), "gemini", "bedrock". Override with LLM_PROVIDER env var
   gemini_model: "gemini-3-flash-preview" # Used when provider=gemini
+  bedrock_model: "anthropic.claude-3-5-sonnet-20240620-v1:0" # Used when provider=bedrock. For cross-region inference profiles use e.g. "us.anthropic.claude-sonnet-4-6"
+  bedrock_region: "us-east-1" # AWS region for Bedrock. Override with AWS_DEFAULT_REGION env var
+  # bedrock_provider: "anthropic"  # Only needed for ARN-based model IDs; auto-detected for standard model IDs
   title_cache_max_size: 10000
 
 mcp_server:
@@ -55,18 +58,18 @@ observability:
   log_level: "INFO"
 
 memory:
-  threshold_percent: 80.0  # Circuit breaker triggers when RAM usage exceeds this %
+  threshold_percent: 80.0 # Circuit breaker triggers when RAM usage exceeds this %
 
 linkedin_api:
-  client_id: ""       # or use LINKEDIN_API_CLIENT_ID env var
-  client_secret: ""   # or use LINKEDIN_API_CLIENT_SECRET env var
+  client_id: "" # or use LINKEDIN_API_CLIENT_ID env var
+  client_secret: "" # or use LINKEDIN_API_CLIENT_SECRET env var
   redirect_uri: "http://localhost:8080/api/oauth/linkedin/callback"
   scopes:
     - "w_member_social"
     - "w_organization_social"
     - "r_organization_social"
     - "rw_organization_admin"
-  organization_urn: ""  # e.g. "urn:li:organization:12345"
+  organization_urn: "" # e.g. "urn:li:organization:12345"
 
 campaign:
   default_sentiments:
