@@ -3,12 +3,13 @@
 import json
 import re
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from typing import Any, Callable, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
 from loguru import logger
 
+from src.config.config_loader import load_config
 from src.core.providers.llm_client import get_llm_client
 
 ROLE_CATEGORIES = [
@@ -83,8 +84,39 @@ JSON response:"""
 # Batch size for LLM calls (titles per request)
 LLM_BATCH_SIZE = 50
 
+
+class BoundedLRUCache:
+    """Dict-like LRU cache with a max size. Evicts oldest on overflow."""
+    def __init__(self, max_size: int = 10000):
+        self._data = OrderedDict()
+        self._max_size = max_size
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def __getitem__(self, key):
+        self._data.move_to_end(key)
+        return self._data[key]
+
+    def get(self, key, default=None):
+        if key in self._data:
+            self._data.move_to_end(key)
+            return self._data[key]
+        return default
+
+    def update(self, mapping):
+        for k, v in mapping.items():
+            self._data[k] = v
+            self._data.move_to_end(k)
+        while len(self._data) > self._max_size:
+            self._data.popitem(last=False)
+
+    def __len__(self):
+        return len(self._data)
+
+
 # Module-level cache: {title -> category} persists across searches within the same process
-_title_cache: Dict[str, str] = {}
+_title_cache = BoundedLRUCache(load_config().llm.title_cache_max_size)
 
 
 # Progress callback type: (current_batch, total_batches, titles_processed, total_titles)
@@ -231,6 +263,8 @@ def _classify_titles_with_llm_batched(
 
     # Update cache with all new classifications
     _title_cache.update(all_validated)
+    if len(_title_cache) >= _title_cache._max_size:
+        logger.debug("Title cache at capacity, evicted oldest entries", cache_size=len(_title_cache), max_size=_title_cache._max_size)
 
     # Merge cached + newly classified
     all_validated.update(cached)

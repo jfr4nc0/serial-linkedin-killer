@@ -47,6 +47,7 @@ class BrowserManagerService(IBrowserManager):
         self.chrome_binary_path = chrome_binary_path
         self.driver: Optional[webdriver.Chrome] = None
         self.wait: Optional[WebDriverWait] = None
+        BrowserManagerService._prune_instances()
         BrowserManagerService._instances.append(weakref.ref(self))
 
     def __del__(self):
@@ -265,8 +266,14 @@ class BrowserManagerService(IBrowserManager):
                     pass
 
     @classmethod
+    def _prune_instances(cls):
+        """Remove dead weakrefs from the instance tracker."""
+        cls._instances = [ref for ref in cls._instances if ref() is not None]
+
+    @classmethod
     def cleanup_all(cls):
         """Cleanup all browser instances. Called on process exit."""
+        cls._prune_instances()
         for ref in cls._instances:
             instance = ref()
             if instance is not None:

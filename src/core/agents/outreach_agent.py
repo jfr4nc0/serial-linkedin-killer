@@ -136,6 +136,8 @@ class EmployeeOutreachAgent:
                 exclude_companies=exclude_companies,
                 batch_id=batch_id,
             )
+            del companies_to_search  # No longer needed after MCP accepted the batch
+            del all_exclude_urls  # Exclusion URLs sent to MCP, not needed locally
 
             logger.info(
                 f"MCP accepted batch {batch_id}, waiting for completion via Kafka...",
@@ -160,6 +162,7 @@ class EmployeeOutreachAgent:
             )
 
             # Read actual employee data from shared DB
+            # Lazy generator — streams rows in chunks via yield_per to avoid ORM memory spike
             db_results = self._db.get_search_results(batch_id)
             for emp in db_results:
                 emp["company_name"] = emp.get("company_name", "Unknown")
@@ -168,14 +171,17 @@ class EmployeeOutreachAgent:
 
             # Cleanup search results from DB
             self._db.delete_search_results(batch_id)
+            employee_count = len(all_employees)
             logger.info(
-                f"Loaded {len(all_employees)} employees from DB, batch cleaned up",
+                f"Loaded {employee_count} employees from DB, batch cleaned up",
             )
 
-            return {
+            result = {
                 "employees_found": all_employees,
-                "current_status": f"Found {len(all_employees)} employees across {len(companies_to_search)} companies",
+                "current_status": f"Found {employee_count} employees",
             }
+            del all_employees  # Drop local reference; data now owned by LangGraph state
+            return result
 
         except Exception as e:
             error_msg = f"Batch employee search failed: {str(e)}"

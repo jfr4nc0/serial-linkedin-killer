@@ -69,7 +69,6 @@ class JobSearchGraph:
             search_url += "?" + "&".join(params)
 
         return {
-            **state,
             "search_url": search_url,
             "current_page": 1,
         }
@@ -81,14 +80,11 @@ class JobSearchGraph:
 
             state["browser_manager"].random_delay(0.5, 1)
 
-            return {
-                **state,
-            }
+            return {}
 
         except Exception as e:
             return {
-                **state,
-                "errors": state["errors"] + [f"Failed to navigate to search: {str(e)}"],
+                "errors": [f"Failed to navigate to search: {str(e)}"],
             }
 
     def _extract_jobs_from_page(self, state: JobSearchState) -> Dict[str, Any]:
@@ -159,20 +155,18 @@ class JobSearchGraph:
                     continue
 
             return {
-                **state,
-                "collected_jobs": state["collected_jobs"] + page_jobs,
+                "collected_jobs": page_jobs,
                 "total_found": state["total_found"] + len(page_jobs),
             }
 
         except Exception as e:
             return {
-                **state,
-                "errors": state["errors"] + [f"Failed to extract jobs: {str(e)}"],
+                "errors": [f"Failed to extract jobs: {str(e)}"],
             }
 
     def _check_pagination(self, state: JobSearchState) -> Dict[str, Any]:
         """Check if there are more pages and if we should continue."""
-        return state
+        return {}
 
     def _should_continue_pagination(self, state: JobSearchState) -> str:
         """Determine if we should continue to the next page."""
@@ -223,15 +217,12 @@ class JobSearchGraph:
             state["browser_manager"].random_delay(0.5, 1)
 
             return {
-                **state,
                 "current_page": state["current_page"] + 1,
             }
 
         except Exception as e:
             return {
-                **state,
-                "errors": state["errors"]
-                + [f"Failed to navigate to next page: {str(e)}"],
+                "errors": [f"Failed to navigate to next page: {str(e)}"],
             }
 
     def execute(

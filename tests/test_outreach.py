@@ -4,19 +4,12 @@ import os
 import tempfile
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 from src.config.config_loader import AgentConfig, load_config
-from src.core.tools.company_db import CompanyDB
-from src.core.tools.company_loader import (
-    filter_companies,
-    get_unique_values,
-    load_companies,
-)
-from src.core.tools.message_template import render_template
-
-# --- Company Loader Tests ---
+from src.core.agents.tools.company_db import CompanyDB
+from src.core.agents.tools.message_template import render_template
+from src.core.db.agent_db import AgentDB
 
 
 @pytest.fixture
@@ -32,76 +25,6 @@ germany,2008,mno345,software,linkedin.com/company/devhaus,berlin,devhaus ag,berl
     csv_file = tmp_path / "test_companies.csv"
     csv_file.write_text(csv_content)
     return str(csv_file)
-
-
-def test_load_companies(sample_csv):
-    df = load_companies(sample_csv)
-    assert len(df) == 5
-    assert list(df.columns) == [
-        "country",
-        "founded",
-        "id",
-        "industry",
-        "linkedin_url",
-        "locality",
-        "name",
-        "region",
-        "size",
-        "website",
-    ]
-
-
-def test_get_unique_values(sample_csv):
-    df = load_companies(sample_csv)
-
-    countries = get_unique_values(df, "country")
-    assert "germany" in countries
-    assert "united states" in countries
-    assert "romania" in countries
-    assert len(countries) == 3
-
-    industries = get_unique_values(df, "industry")
-    assert "software" in industries
-    assert "automotive" in industries
-    assert len(industries) == 3
-
-
-def test_filter_by_country(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"country": ["germany"]})
-    assert len(filtered) == 2
-    assert all(filtered["country"] == "germany")
-
-
-def test_filter_by_industry(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"industry": ["software"]})
-    assert len(filtered) == 3
-
-
-def test_filter_by_multiple_columns(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(
-        df,
-        {
-            "country": ["germany"],
-            "industry": ["software"],
-        },
-    )
-    assert len(filtered) == 1
-    assert filtered.iloc[0]["name"] == "devhaus ag"
-
-
-def test_filter_empty_values_means_all(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"country": []})
-    assert len(filtered) == 5
-
-
-def test_filter_case_insensitive(sample_csv):
-    df = load_companies(sample_csv)
-    filtered = filter_companies(df, {"country": ["GERMANY"]})
-    assert len(filtered) == 2
 
 
 # --- Message Template Tests ---
@@ -191,7 +114,7 @@ linkedin:
 @pytest.fixture
 def company_db(sample_csv):
     """Create a CompanyDB with in-memory SQLite imported from sample CSV."""
-    db = CompanyDB(":memory:")
+    db = CompanyDB("sqlite:///:memory:")
     db.import_csv(sample_csv)
     yield db
     db.close()
@@ -243,3 +166,61 @@ def test_db_filter_empty_means_all(company_db):
 def test_db_filter_case_insensitive(company_db):
     results = company_db.filter_companies({"country": ["GERMANY"]})
     assert len(results) == 2
+
+
+def test_db_filter_companies_chunk_size(company_db):
+    """Verify chunk_size doesn't affect correctness."""
+    results = company_db.filter_companies({"country": ["germany"]}, chunk_size=1)
+    assert len(results) == 2
+    assert all(r["country"] == "germany" for r in results)
+
+
+# --- AgentDB Tests ---
+
+
+@pytest.fixture
+def agent_db():
+    """Create an in-memory AgentDB for testing."""
+    db = AgentDB("sqlite:///:memory:")
+    yield db
+
+
+def test_get_search_results_returns_iterable(agent_db):
+    """Verify get_search_results returns an iterable that yields correct dicts."""
+    agent_db.save_search_results(
+        "batch1",
+        "Acme Corp",
+        "linkedin.com/company/acme",
+        [{"name": "Alice", "title": "Engineer", "profile_url": "linkedin.com/in/alice"}]
+    )
+    results = agent_db.get_search_results("batch1")
+    results_list = list(results)
+
+    assert len(results_list) == 1
+    emp = results_list[0]
+    assert emp["name"] == "Alice"
+    assert emp["title"] == "Engineer"
+    assert emp["profile_url"] == "linkedin.com/in/alice"
+    assert emp["company_name"] == "Acme Corp"
+    assert emp["company_linkedin_url"] == "linkedin.com/company/acme"
+
+
+def test_get_search_results_chunk_size(agent_db):
+    """Verify chunk_size doesn't affect correctness."""
+    employees = [
+        {"name": f"Employee{i}", "title": f"Title{i}", "profile_url": f"linkedin.com/in/emp{i}"}
+        for i in range(5)
+    ]
+    agent_db.save_search_results("batch2", "BigCo", "linkedin.com/company/bigco", employees)
+
+    results = list(agent_db.get_search_results("batch2", chunk_size=2))
+
+    assert len(results) == 5
+    names = {r["name"] for r in results}
+    assert names == {f"Employee{i}" for i in range(5)}
+
+
+def test_get_search_results_empty(agent_db):
+    """Verify empty result set works correctly."""
+    results = list(agent_db.get_search_results("nonexistent"))
+    assert results == []

@@ -1,6 +1,7 @@
 """Type definitions for employee outreach workflow."""
 
-from typing import Any, List, Optional, TypedDict
+import operator
+from typing import Annotated, Any, List, Optional, TypedDict
 
 from src.linkedin_mcp.interfaces.services import IBrowserManager
 
@@ -23,11 +24,11 @@ class EmployeeSearchState(TypedDict):
     company_linkedin_url: str
     company_name: str
     browser_manager: IBrowserManager
-    collected_employees: List[EmployeeResult]
+    collected_employees: Annotated[List[EmployeeResult], operator.add]
     extracted_urls: set  # Track already-extracted profile URLs
     exclude_profile_urls: set  # Profile URLs to skip (already messaged)
     limit: int
-    errors: List[str]
+    errors: Annotated[List[str], operator.add]
 
 
 class MessageSendState(TypedDict):

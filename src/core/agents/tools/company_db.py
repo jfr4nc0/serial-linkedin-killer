@@ -86,8 +86,12 @@ class CompanyDB:
         with self._session_factory() as session:
             return session.query(func.count(Company.id)).scalar() or 0
 
-    def filter_companies(self, filters: Dict[str, List[str]]) -> List[dict]:
-        """Filter companies by column values (case-insensitive)."""
+    def filter_companies(self, filters: Dict[str, List[str]], chunk_size: int = 500) -> List[dict]:
+        """Filter companies by column values (case-insensitive).
+
+        Uses yield_per for chunked iteration to avoid memory spike from
+        materializing all ORM objects at once.
+        """
         with self._session_factory() as session:
             query = session.query(Company)
 
@@ -98,11 +102,11 @@ class CompanyDB:
                 lower_values = [v.lower().strip() for v in values]
                 query = query.filter(func.lower(func.trim(col)).in_(lower_values))
 
-            rows = query.all()
-            return [
-                {c.name: getattr(row, c.name) for c in Company.__table__.columns}
-                for row in rows
-            ]
+            results = []
+            columns = Company.__table__.columns
+            for row in query.yield_per(chunk_size):
+                results.append({c.name: getattr(row, c.name) for c in columns})
+            return results
 
     def close(self):
         """Dispose the engine."""
